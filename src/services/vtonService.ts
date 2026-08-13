@@ -1,5 +1,6 @@
 // src/services/vtonService.ts
 import { GarmentCategory, ProviderType } from '../types';
+import { supabase } from '../lib/supabase';
 
 export function formatPrice(price: number): string {
   return new Intl.NumberFormat('pt-BR', {
@@ -43,10 +44,16 @@ export interface TryOnApiResponse {
   error?: string;
 }
 
+async function getAuthHeader(): Promise<Record<string, string>> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}` };
+}
+
 /**
-  * Calls real Virtual Try-On backend service.
-  * ABSOLUTELY NO local canvas overlay or fake composition is performed.
-  */
+ * Calls real Virtual Try-On backend service.
+ */
 export async function requestVirtualTryOn(payload: {
   personImage: string;
   garmentImage: string;
@@ -60,22 +67,24 @@ export async function requestVirtualTryOn(payload: {
   if (payload.onStatusChange) payload.onStatusChange('Preparando sua foto...');
   await new Promise((r) => setTimeout(r, 300));
 
-  if (payload.onStatusChange) payload.onStatusChange('Enviando para o provedor...');
+  if (payload.onStatusChange) payload.onStatusChange('Enviando para o servidor...');
   await new Promise((r) => setTimeout(r, 300));
 
   if (payload.onStatusChange) payload.onStatusChange('Gerando provador virtual...');
+
+  const authHeaders = await getAuthHeader();
 
   const response = await fetch('/api/try-on/generate', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...authHeaders,
     },
     body: JSON.stringify({
       person_image: payload.personImage,
       garment_image: payload.garmentImage,
       garment_category: payload.garmentCategory,
       store_id: payload.storeId || 'demo-store-001',
-      user_id: payload.userId,
       product_id: payload.productId,
       requested_provider: payload.requestedProvider,
     }),
@@ -93,11 +102,14 @@ export async function requestVirtualTryOn(payload: {
 }
 
 /**
-  * Admin: Fetch Store AI Engine configuration
-  */
+ * Admin: Fetch Store AI Engine configuration
+ */
 export async function getStoreAiSettings(storeId: string): Promise<{ provider_mode: ProviderType }> {
   try {
-    const res = await fetch(`/api/admin/store-ai-settings/${storeId}`);
+    const authHeaders = await getAuthHeader();
+    const res = await fetch(`/api/admin/store-ai-settings/${storeId}`, {
+      headers: { ...authHeaders },
+    });
     if (!res.ok) return { provider_mode: 'both' };
     return await res.json();
   } catch {
@@ -106,25 +118,30 @@ export async function getStoreAiSettings(storeId: string): Promise<{ provider_mo
 }
 
 /**
-  * Admin: Save Store AI Engine configuration
-  */
+ * Admin: Save Store AI Engine configuration
+ */
 export async function saveStoreAiSettings(storeId: string, providerMode: ProviderType): Promise<boolean> {
+  const authHeaders = await getAuthHeader();
   const res = await fetch('/api/admin/store-ai-settings', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders,
+    },
     body: JSON.stringify({ store_id: storeId, provider_mode: providerMode }),
   });
   return res.ok;
 }
 
 /**
-  * Admin: Run single provider diagnostic test
-  */
+ * Admin: Run single provider diagnostic test
+ */
 export async function testProviderDiagnostic(payload: {
   provider: 'perfectcorp' | 'google';
   personImage?: string;
   garmentImage?: string;
   garmentCategory?: string;
+  storeId?: string;
 }): Promise<{
   provider: string;
   request_accepted: boolean;
@@ -136,10 +153,17 @@ export async function testProviderDiagnostic(payload: {
   error_message: string | null;
   result_url: string | null;
 }> {
+  const authHeaders = await getAuthHeader();
   const res = await fetch('/api/admin/test-provider', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders,
+    },
+    body: JSON.stringify({
+      ...payload,
+      store_id: payload.storeId || 'demo-store-001',
+    }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -149,10 +173,13 @@ export async function testProviderDiagnostic(payload: {
 }
 
 /**
-  * Admin: Run complete test suite (15 test cases)
-  */
+ * Admin: Run complete test suite (15 test cases)
+ */
 export async function runVtonTests(): Promise<any> {
-  const res = await fetch('/api/admin/run-tests');
+  const authHeaders = await getAuthHeader();
+  const res = await fetch('/api/admin/run-tests', {
+    headers: { ...authHeaders },
+  });
   if (!res.ok) throw new Error('Falha ao executar bateria de testes.');
   return await res.json();
 }

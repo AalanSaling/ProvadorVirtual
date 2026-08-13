@@ -1,16 +1,14 @@
 // src/lib/supabase.ts
 import { createClient } from '@supabase/supabase-js';
 
-const metaEnv = (import.meta as any).env || {};
-
 export const supabaseUrlResolved =
-  metaEnv.VITE_SUPABASE_URL ||
-  metaEnv.EXPO_PUBLIC_SUPABASE_URL ||
+  process.env.EXPO_PUBLIC_SUPABASE_URL ||
+  process.env.VITE_SUPABASE_URL ||
   '';
 
 export const supabaseAnonKeyResolved =
-  metaEnv.VITE_SUPABASE_ANON_KEY ||
-  metaEnv.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.VITE_SUPABASE_ANON_KEY ||
   '';
 
 export const isSupabaseConfigured = (): boolean => {

@@ -33,7 +33,7 @@ export const TabNavigator: React.FC = () => {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: bg }]}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={bg} />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
       {/* Main Screen View */}
       <View style={styles.contentContainer}>

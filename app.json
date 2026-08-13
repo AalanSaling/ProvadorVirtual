@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "Provador Virtual Real",
+    "slug": "provador-virtual-real",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "provadorvirtual",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.provadorvirtual.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Permissão para tirar foto do corpo para o provador virtual de roupas com IA.",
+        "NSPhotoLibraryUsageDescription": "Permissão para selecionar fotos da galeria para o provador virtual."
+      }
+    },
+    "android": {
+      "package": "com.provadorvirtual.app",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Permissão para tirar foto do corpo para o provador virtual de roupas com IA."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Permissão para selecionar fotos da galeria para o provador virtual.",
+          "cameraPermission": "Permissão para tirar foto do corpo para o provador virtual de roupas com IA."
+        }
+      ]
+    ]
+  }
+}

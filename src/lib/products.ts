@@ -1,6 +1,6 @@
 // src/lib/products.ts
 import { ClothingItem, ProductInput, Store, StoreAISettings, StoreRole } from '../types';
-import { supabase, isSupabaseConfigured, supabaseUrlResolved } from './supabase';
+import { supabase, isSupabaseConfigured } from './supabase';
 import { getStoredCatalog, saveStoredCatalog } from './storage';
 
 const DEFAULT_DEMO_STORE: Store = {
@@ -89,7 +89,7 @@ export async function getProducts(storeId: string = DEFAULT_DEMO_STORE.id): Prom
 }
 
 /**
- * Criar produto via Edge Function admin-products utilizando Supabase Auth Token
+ * Criar produto via Express API
  */
 export async function createProduct(
   input: ProductInput,
@@ -124,16 +124,15 @@ export async function createProduct(
     throw new Error('Usuário precisa estar autenticado para criar produtos.');
   }
 
-  const response = await fetch(`${supabaseUrlResolved}/functions/v1/admin-products`, {
+  const response = await fetch('/api/products', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
-      action: 'create',
-      store_id: input.store_id,
-      product: input,
+      store_id: input.store_id || DEFAULT_DEMO_STORE.id,
+      ...input,
       catalogImageBase64: catalogBase64,
       tryOnImageBase64: tryOnBase64,
     }),
@@ -148,7 +147,7 @@ export async function createProduct(
 }
 
 /**
- * Atualizar produto via Edge Function admin-products utilizando Supabase Auth Token
+ * Atualizar produto via Express API
  */
 export async function updateProduct(
   input: ProductInput & { id: string },
@@ -183,16 +182,15 @@ export async function updateProduct(
     throw new Error('Usuário precisa estar autenticado para atualizar produtos.');
   }
 
-  const response = await fetch(`${supabaseUrlResolved}/functions/v1/admin-products`, {
-    method: 'POST',
+  const response = await fetch(`/api/products/${input.id}`, {
+    method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
-      action: 'update',
-      store_id: input.store_id,
-      product: input,
+      store_id: input.store_id || DEFAULT_DEMO_STORE.id,
+      ...input,
       catalogImageBase64: catalogBase64,
       tryOnImageBase64: tryOnBase64,
     }),
@@ -207,7 +205,7 @@ export async function updateProduct(
 }
 
 /**
- * Excluir produto via Edge Function admin-products utilizando Supabase Auth Token
+ * Excluir produto via Express API
  */
 export async function deleteProduct(productId: string, storeId: string): Promise<void> {
   if (!isSupabaseConfigured()) {
@@ -224,17 +222,11 @@ export async function deleteProduct(productId: string, storeId: string): Promise
     throw new Error('Usuário precisa estar autenticado para excluir produtos.');
   }
 
-  const response = await fetch(`${supabaseUrlResolved}/functions/v1/admin-products`, {
-    method: 'POST',
+  const response = await fetch(`/api/products/${productId}?store_id=${storeId}`, {
+    method: 'DELETE',
     headers: {
-      'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({
-      action: 'delete',
-      store_id: storeId,
-      product: { id: productId },
-    }),
   });
 
   const resJson = await response.json();
@@ -255,13 +247,21 @@ export async function getStoreAISettings(storeId: string): Promise<StoreAISettin
 
   if (!isSupabaseConfigured()) return defaultSettings;
 
-  const { data } = await supabase
-    .from('store_ai_settings')
-    .select('*')
-    .eq('store_id', storeId)
-    .maybeSingle();
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
 
-  return data || defaultSettings;
+  const response = await fetch(`/api/admin/store-ai-settings/${storeId}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+
+  if (!response.ok) return defaultSettings;
+
+  const data = await response.json();
+  return {
+    store_id: storeId,
+    provider_mode: data.provider_mode || 'both',
+    enabled: data.enabled ?? true,
+  };
 }
 
 export async function updateStoreAISettings(
@@ -278,12 +278,30 @@ export async function updateStoreAISettings(
 
   if (!isSupabaseConfigured()) return settings;
 
-  const { data, error } = await supabase
-    .from('store_ai_settings')
-    .upsert(settings)
-    .select()
-    .single();
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
 
-  if (error) throw error;
-  return data;
+  if (!token) {
+    throw new Error('Usuário precisa estar autenticado para atualizar configurações da loja.');
+  }
+
+  const response = await fetch('/api/admin/store-ai-settings', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      store_id: storeId,
+      provider_mode,
+      enabled,
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Erro ao atualizar configurações da loja.');
+  }
+
+  return settings;
 }

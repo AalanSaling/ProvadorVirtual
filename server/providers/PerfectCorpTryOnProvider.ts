@@ -19,46 +19,8 @@ export class PerfectCorpTryOnProvider implements TryOnProvider {
   }
 
   private getApiHost(): string {
-    return process.env.PERFECTCORP_API_HOST || 'https://s2s.perfectcorp.com';
-  }
-
-  /**
-   * Validates image format and size constraints according to Perfect Corp specifications.
-   * JPEG/PNG/WEBP, up to 10MB.
-   */
-  private validateImage(imageData: string, imageName: string): { valid: boolean; error?: string } {
-    if (!imageData || typeof imageData !== 'string' || imageData.trim().length === 0) {
-      return { valid: false, error: `${imageName} é obrigatória e não foi fornecida.` };
-    }
-
-    if (imageData.startsWith('data:')) {
-      const match = imageData.match(/^data:(image\/(jpeg|png|jpg|webp));base64,(.+)$/i);
-      if (!match) {
-        return {
-          valid: false,
-          error: `${imageName} possui formato inválido. Utilize JPEG, PNG ou WEBP.`,
-        };
-      }
-      const base64Str = match[3];
-      const estimatedBytes = (base64Str.length * 3) / 4;
-      const maxBytes = 10 * 1024 * 1024; // 10 MB limit
-      if (estimatedBytes > maxBytes) {
-        return {
-          valid: false,
-          error: `${imageName} excede o tamanho máximo permitido de 10 MB (${(estimatedBytes / (1024 * 1024)).toFixed(1)} MB).`,
-        };
-      }
-      return { valid: true };
-    }
-
-    if (imageData.startsWith('http://') || imageData.startsWith('https://')) {
-      return { valid: true };
-    }
-
-    return {
-      valid: false,
-      error: `${imageName} deve ser um Data URI Base64 válido ou uma URL HTTP(S) acessível.`,
-    };
+    const host = process.env.PERFECTCORP_API_HOST || 'https://s2s.perfectcorp.com';
+    return host.replace(/\/+$/, '');
   }
 
   private mapGarmentCategory(category: GarmentCategoryType): string {
@@ -79,35 +41,7 @@ export class PerfectCorpTryOnProvider implements TryOnProvider {
   async generateTryOn(input: TryOnInput): Promise<ProviderResult> {
     const startTime = Date.now();
 
-    // 1. Validate Person Image
-    const personVal = this.validateImage(input.personImage, 'Foto da pessoa (src)');
-    if (!personVal.valid) {
-      return {
-        provider: 'perfectcorp',
-        status: 'failed',
-        image: null,
-        taskId: null,
-        latencyMs: Date.now() - startTime,
-        errorCode: 'PERFECTCORP_INVALID_IMAGE',
-        errorMessage: personVal.error || 'Foto da pessoa com formato ou tamanho inválido.',
-      };
-    }
-
-    // 2. Validate Garment Image
-    const garmentVal = this.validateImage(input.garmentImage, 'Foto da roupa (ref)');
-    if (!garmentVal.valid) {
-      return {
-        provider: 'perfectcorp',
-        status: 'failed',
-        image: null,
-        taskId: null,
-        latencyMs: Date.now() - startTime,
-        errorCode: 'PERFECTCORP_INVALID_IMAGE',
-        errorMessage: garmentVal.error || 'Foto da roupa do catálogo com formato ou tamanho inválido.',
-      };
-    }
-
-    // 3. Validate Credentials
+    // 1. Validate Credentials
     const apiKey = this.getApiKey();
     if (!apiKey) {
       return {
@@ -121,12 +55,37 @@ export class PerfectCorpTryOnProvider implements TryOnProvider {
       };
     }
 
+    // 2. Validate URLs (Must be HTTP/HTTPS URLs produced by storage pipeline)
+    if (!input.personImage.startsWith('http://') && !input.personImage.startsWith('https://')) {
+      return {
+        provider: 'perfectcorp',
+        status: 'failed',
+        image: null,
+        taskId: null,
+        latencyMs: Date.now() - startTime,
+        errorCode: 'PERFECTCORP_INVALID_IMAGE',
+        errorMessage: 'A foto da pessoa (src_file_url) deve ser convertida em uma URL HTTP(S) acessível antes de ser enviada à Perfect Corp.',
+      };
+    }
+
+    if (!input.garmentImage.startsWith('http://') && !input.garmentImage.startsWith('https://')) {
+      return {
+        provider: 'perfectcorp',
+        status: 'failed',
+        image: null,
+        taskId: null,
+        latencyMs: Date.now() - startTime,
+        errorCode: 'PERFECTCORP_INVALID_IMAGE',
+        errorMessage: 'A foto da roupa (ref_file_url) deve ser convertida em uma URL HTTP(S) acessível antes de ser enviada à Perfect Corp.',
+      };
+    }
+
     const apiHost = this.getApiHost();
     const taskEndpoint = `${apiHost}/s2s/v2.0/task/cloth-v3`;
     const garmentCategory = this.mapGarmentCategory(input.garmentCategory);
 
     try {
-      // 4. Create Task
+      // 3. Create Task (src_file_url = PESSOA, ref_file_url = ROUPA - NUNCA INVERTER)
       const createResponse = await fetch(taskEndpoint, {
         method: 'POST',
         headers: {
@@ -135,8 +94,8 @@ export class PerfectCorpTryOnProvider implements TryOnProvider {
           'x-api-key': apiKey,
         },
         body: JSON.stringify({
-          src_file_url: input.personImage,
-          ref_file_url: input.garmentImage,
+          src_file_url: input.personImage, // PESSOA
+          ref_file_url: input.garmentImage, // ROUPA
           garment_category: garmentCategory,
         }),
       });
@@ -161,7 +120,7 @@ export class PerfectCorpTryOnProvider implements TryOnProvider {
           taskId: null,
           latencyMs: Date.now() - startTime,
           errorCode: 'PERFECTCORP_AUTH_ERROR',
-          errorMessage: 'Credencial ou token da Perfect Corp rejeitado pelo servidor (Erro de Autenticação).',
+          errorMessage: 'Credencial ou token da Perfect Corp rejeitado pelo servidor (Erro de Autenticação 401/403).',
         };
       }
 
@@ -174,7 +133,7 @@ export class PerfectCorpTryOnProvider implements TryOnProvider {
           taskId: null,
           latencyMs: Date.now() - startTime,
           errorCode: 'PERFECTCORP_PROVIDER_ERROR',
-          errorMessage: `Falha ao criar tarefa na Perfect Corp (HTTP ${createResponse.status}): ${errText || createResponse.statusText}`,
+          errorMessage: `Falha ao criar tarefa na Perfect Corp (HTTP ${createResponse.status}): ${errText.slice(0, 300) || createResponse.statusText}`,
         };
       }
 
@@ -189,13 +148,13 @@ export class PerfectCorpTryOnProvider implements TryOnProvider {
           taskId: null,
           latencyMs: Date.now() - startTime,
           errorCode: 'PERFECTCORP_TASK_FAILED',
-          errorMessage: 'A Perfect Corp não retornou um ID de tarefa válido na resposta.',
+          errorMessage: 'A Perfect Corp não retornou um ID de tarefa válido na resposta de criação.',
         };
       }
 
-      // 5. Poll Task Status (Controlled polling)
+      // 4. Controlled Polling with Timeout
       const pollIntervalMs = 3000;
-      const maxTimeoutMs = 60000; // 60s max
+      const maxTimeoutMs = 60000; // 60s max limit
       const maxAttempts = Math.floor(maxTimeoutMs / pollIntervalMs);
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -223,7 +182,7 @@ export class PerfectCorpTryOnProvider implements TryOnProvider {
         }
 
         if (!statusResponse.ok) {
-          continue; // Retry on transient status check failure
+          continue; // Retry transient status query failures
         }
 
         const statusData = await statusResponse.json();
@@ -245,7 +204,7 @@ export class PerfectCorpTryOnProvider implements TryOnProvider {
               taskId,
               latencyMs: Date.now() - startTime,
               errorCode: 'PERFECTCORP_TASK_FAILED',
-              errorMessage: 'A tarefa foi concluída pela Perfect Corp mas nenhuma URL de imagem foi gerada.',
+              errorMessage: 'A tarefa foi concluída pela Perfect Corp, mas nenhuma URL de imagem foi retornada.',
             };
           }
 

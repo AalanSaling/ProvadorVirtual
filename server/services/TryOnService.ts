@@ -4,11 +4,16 @@ import { PerfectCorpTryOnProvider } from '../providers/PerfectCorpTryOnProvider'
 import { GoogleTryOnProvider } from '../providers/GoogleTryOnProvider';
 import {
   TryOnInput,
-  TryOnProvider,
   MultiProviderResult,
   StoreProviderMode,
   ProviderResult,
 } from '../providers/types';
+import {
+  uploadPersonImageAndGetSignedUrl,
+  prepareGarmentImageForProvider,
+  saveResultToPrivateStorage,
+  cleanupTempInputPhoto,
+} from './storageHelper';
 
 export class TryOnService {
   private perfectCorpProvider: PerfectCorpTryOnProvider;
@@ -28,12 +33,12 @@ export class TryOnService {
 
   /**
    * Fetches store AI provider settings from database.
-   * Default mode is 'both'.
+   * Throws or returns null if not configured (No automatic 'both' fallback!).
    */
-  async getStoreProviderMode(storeId?: string): Promise<StoreProviderMode> {
-    if (!storeId) return 'both';
+  async getStoreProviderMode(storeId?: string): Promise<StoreProviderMode | null> {
+    if (!storeId) return null;
     const supabase = this.getSupabaseAdmin();
-    if (!supabase) return 'both';
+    if (!supabase) return null;
 
     try {
       const { data } = await supabase
@@ -42,118 +47,221 @@ export class TryOnService {
         .eq('store_id', storeId)
         .maybeSingle();
 
-      if (data && data.provider_mode) {
+      if (data && data.enabled && data.provider_mode) {
         return data.provider_mode as StoreProviderMode;
       }
     } catch {
-      // Fallback
+      // Return null if query fails or unconfigured
     }
-    return 'both';
+    return null;
   }
 
   /**
    * Main entrypoint to execute Virtual Try-On generation.
-   * Enforces store provider mode (perfectcorp, google, or both).
    */
   async executeTryOn(
     input: TryOnInput,
     requestedMode?: StoreProviderMode
   ): Promise<MultiProviderResult> {
+    const startTime = Date.now();
+    const reqId = `tryOn_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
     const storeMode = requestedMode || (await this.getStoreProviderMode(input.storeId));
 
-    if (storeMode === 'perfectcorp') {
-      const pcRes = await this.perfectCorpProvider.generateTryOn(input);
-      const overallStatus = pcRes.status === 'success' ? 'success' : 'failed';
-      const genId = await this.saveGenerationHistory(input, storeMode, overallStatus, { perfectcorp: pcRes });
-
-      return {
-        mode: 'perfectcorp',
-        status: overallStatus,
-        results: {
-          perfectcorp: pcRes,
-        },
-        generationId: genId,
-      };
+    if (!storeMode) {
+      throw new Error('AI_PROVIDER_NOT_CONFIGURED: O provador virtual não está configurado ou ativado para esta loja.');
     }
 
-    if (storeMode === 'google') {
-      const gRes = await this.googleProvider.generateTryOn(input);
-      const overallStatus = gRes.status === 'success' ? 'success' : 'failed';
-      const genId = await this.saveGenerationHistory(input, storeMode, overallStatus, { google: gRes });
+    // 1. Prepare Person Image via Storage Pipeline (Signed URL)
+    let personPrepared: { signedUrl: string; storagePath: string };
+    let garmentPrepared: { url: string; storagePath: string };
 
+    try {
+      personPrepared = await uploadPersonImageAndGetSignedUrl(
+        input.personImage,
+        input.userId || 'anon'
+      );
+    } catch (err: any) {
       return {
-        mode: 'google',
-        status: overallStatus,
+        mode: storeMode,
+        status: 'failed',
         results: {
-          google: gRes,
-        },
-        generationId: genId,
-      };
-    }
-
-    // MODE = 'both'
-    // Execute both providers in parallel for the exact same input
-    const [pcSettled, gSettled] = await Promise.allSettled([
-      this.perfectCorpProvider.generateTryOn(input),
-      this.googleProvider.generateTryOn(input),
-    ]);
-
-    const pcRes: ProviderResult =
-      pcSettled.status === 'fulfilled'
-        ? pcSettled.value
-        : {
+          perfectcorp: {
             provider: 'perfectcorp',
-            status: 'error',
+            status: 'failed',
             image: null,
             taskId: null,
-            latencyMs: 0,
-            errorCode: 'PERFECTCORP_PROVIDER_ERROR',
-            errorMessage: pcSettled.reason?.message || 'Falha de execução não tratada.',
-          };
-
-    const gRes: ProviderResult =
-      gSettled.status === 'fulfilled'
-        ? gSettled.value
-        : {
-            provider: 'google',
-            status: 'error',
-            image: null,
-            taskId: null,
-            latencyMs: 0,
-            errorCode: 'GOOGLE_PROVIDER_ERROR',
-            errorMessage: gSettled.reason?.message || 'Falha de execução não tratada.',
-          };
-
-    const pcSuccess = pcRes.status === 'success';
-    const gSuccess = gRes.status === 'success';
-
-    let overallStatus: 'success' | 'partial_success' | 'failed' = 'failed';
-    if (pcSuccess && gSuccess) {
-      overallStatus = 'success';
-    } else if (pcSuccess || gSuccess) {
-      overallStatus = 'partial_success'; // A failure in one provider MUST NOT destroy the result of the other!
-    } else {
-      overallStatus = 'failed';
+            latencyMs: Date.now() - startTime,
+            errorCode: 'PERFECTCORP_INVALID_IMAGE',
+            errorMessage: err.message || 'Erro ao processar imagem da pessoa.',
+          },
+        },
+      };
     }
 
-    const genId = await this.saveGenerationHistory(input, 'both', overallStatus, {
-      perfectcorp: pcRes,
-      google: gRes,
-    });
+    // 2. Prepare Garment Image
+    try {
+      garmentPrepared = await prepareGarmentImageForProvider(
+        input.garmentImage,
+        input.productId
+      );
+    } catch (err: any) {
+      if (personPrepared.storagePath) {
+        await cleanupTempInputPhoto(personPrepared.storagePath);
+      }
+      return {
+        mode: storeMode,
+        status: 'failed',
+        results: {
+          perfectcorp: {
+            provider: 'perfectcorp',
+            status: 'failed',
+            image: null,
+            taskId: null,
+            latencyMs: Date.now() - startTime,
+            errorCode: 'PERFECTCORP_INVALID_IMAGE',
+            errorMessage: err.message || 'Erro ao processar imagem da roupa.',
+          },
+        },
+      };
+    }
 
-    return {
-      mode: 'both',
-      status: overallStatus,
-      results: {
-        perfectcorp: pcRes,
-        google: gRes,
-      },
-      generationId: genId,
+    const providerInput: TryOnInput = {
+      ...input,
+      personImage: personPrepared.signedUrl,
+      garmentImage: garmentPrepared.url,
     };
+
+    let finalResult: MultiProviderResult;
+
+    try {
+      if (storeMode === 'perfectcorp') {
+        const pcRes = await this.perfectCorpProvider.generateTryOn(providerInput);
+
+        if (pcRes.status === 'success' && pcRes.image) {
+          const savedResult = await saveResultToPrivateStorage(pcRes.image, input.userId || 'anon');
+          pcRes.image = savedResult.signedUrl;
+        }
+
+        const overallStatus = pcRes.status === 'success' ? 'success' : 'failed';
+        const genId = await this.saveGenerationHistory(input, storeMode, overallStatus, { perfectcorp: pcRes });
+
+        finalResult = {
+          mode: 'perfectcorp',
+          status: overallStatus,
+          results: { perfectcorp: pcRes },
+          generationId: genId,
+        };
+      } else if (storeMode === 'google') {
+        const gRes = await this.googleProvider.generateTryOn(providerInput);
+
+        if (gRes.status === 'success' && gRes.image) {
+          const savedResult = await saveResultToPrivateStorage(gRes.image, input.userId || 'anon');
+          gRes.image = savedResult.signedUrl;
+        }
+
+        const overallStatus = gRes.status === 'success' ? 'success' : 'failed';
+        const genId = await this.saveGenerationHistory(input, storeMode, overallStatus, { google: gRes });
+
+        finalResult = {
+          mode: 'google',
+          status: overallStatus,
+          results: { google: gRes },
+          generationId: genId,
+        };
+      } else {
+        // MODE = 'both' (Execute both in parallel)
+        const [pcSettled, gSettled] = await Promise.allSettled([
+          this.perfectCorpProvider.generateTryOn(providerInput),
+          this.googleProvider.generateTryOn(providerInput),
+        ]);
+
+        const pcRes: ProviderResult =
+          pcSettled.status === 'fulfilled'
+            ? pcSettled.value
+            : {
+                provider: 'perfectcorp',
+                status: 'error',
+                image: null,
+                taskId: null,
+                latencyMs: 0,
+                errorCode: 'PERFECTCORP_PROVIDER_ERROR',
+                errorMessage: pcSettled.reason?.message || 'Falha na execução da Perfect Corp.',
+              };
+
+        const gRes: ProviderResult =
+          gSettled.status === 'fulfilled'
+            ? gSettled.value
+            : {
+                provider: 'google',
+                status: 'error',
+                image: null,
+                taskId: null,
+                latencyMs: 0,
+                errorCode: 'GOOGLE_PROVIDER_ERROR',
+                errorMessage: gSettled.reason?.message || 'Falha na execução do Google Gemini.',
+              };
+
+        if (pcRes.status === 'success' && pcRes.image) {
+          const savedResult = await saveResultToPrivateStorage(pcRes.image, input.userId || 'anon');
+          pcRes.image = savedResult.signedUrl;
+        }
+
+        if (gRes.status === 'success' && gRes.image) {
+          const savedResult = await saveResultToPrivateStorage(gRes.image, input.userId || 'anon');
+          gRes.image = savedResult.signedUrl;
+        }
+
+        const pcSuccess = pcRes.status === 'success';
+        const gSuccess = gRes.status === 'success';
+
+        let overallStatus: 'success' | 'partial_success' | 'failed' = 'failed';
+        if (pcSuccess && gSuccess) {
+          overallStatus = 'success';
+        } else if (pcSuccess || gSuccess) {
+          overallStatus = 'partial_success'; // Do not ruin valid result if one provider fails
+        } else {
+          overallStatus = 'failed';
+        }
+
+        const genId = await this.saveGenerationHistory(input, 'both', overallStatus, {
+          perfectcorp: pcRes,
+          google: gRes,
+        });
+
+        finalResult = {
+          mode: 'both',
+          status: overallStatus,
+          results: {
+            perfectcorp: pcRes,
+            google: gRes,
+          },
+          generationId: genId,
+        };
+      }
+    } finally {
+      // Privacy Cleanup: Immediately delete temporary input person photo from private bucket
+      if (personPrepared.storagePath) {
+        await cleanupTempInputPhoto(personPrepared.storagePath);
+      }
+    }
+
+    // Structured Log Output (Requirement 19: NO API keys, JWTs or base64 images logged!)
+    const durationMs = Date.now() - startTime;
+    const errCode =
+      finalResult.results.perfectcorp?.errorCode ||
+      finalResult.results.google?.errorCode ||
+      'NONE';
+
+    console.log(
+      `[TRY-ON LOG] req_id=${reqId} user_id=${input.userId || 'anon'} store_id=${input.storeId || 'none'} product_id=${input.productId || 'none'} provider=${storeMode} duration_ms=${durationMs} status=${finalResult.status} error_code=${errCode}`
+    );
+
+    return finalResult;
   }
 
   /**
-   * Single provider diagnostic test method
+   * Diagnostic test for single provider
    */
   async testProvider(providerName: 'perfectcorp' | 'google', input: TryOnInput): Promise<ProviderResult> {
     if (providerName === 'perfectcorp') {
@@ -190,7 +298,6 @@ export class TryOnService {
           product_id: input.productId || null,
           provider: mode,
           status: overallStatus,
-          source_photo_path: input.personImage.slice(0, 500),
           result_photo_path: mainResultPhoto,
           error_code: mainErrorCode,
           error_message: mainError,
