@@ -1,0 +1,6 @@
+{
+  "name": "Provador Virtual IA",
+  "description": "Aplicativo de Provador Virtual de Roupas com Inteligência Artificial para iOS e Web, baseado no repositório ProvadorVirtual.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
