@@ -1,13 +1,15 @@
-import React, { useRef } from 'react';
-import { Upload, X, Camera, Image as ImageIcon } from 'lucide-react';
+// src/components/PhotoUpload.tsx
+import React, { useState } from 'react';
+import { View, Text, Image, TouchableOpacity, Modal, StyleSheet, ActivityIndicator } from 'react-native';
+import { usePhotoPicker } from '../hooks/usePhotoPicker';
+import { Camera, Image as ImageIcon, Trash2, Check, RefreshCw, X, User } from 'lucide-react-native';
 
 interface PhotoUploadProps {
   photoUri: string | null;
-  onUpload: (dataUrl: string) => void;
+  onUpload: (uri: string) => void;
   onRemove: () => void;
-  label: string;
+  label?: string;
   hint?: string;
-  compact?: boolean;
   isDark?: boolean;
 }
 
@@ -15,108 +17,288 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
   photoUri,
   onUpload,
   onRemove,
-  label,
-  hint = 'Toque para enviar ou arraste',
-  compact = false,
-  isDark = false,
+  label = 'Sua Foto',
+  hint = 'Sua foto é processada apenas localmente e via IA',
+  isDark = true,
 }) => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { pickFromGallery, takePhotoWithCamera, loading } = usePhotoPicker();
+  const [modalVisible, setModalVisible] = useState(false);
+  const [previewUri, setPreviewUri] = useState<string | null>(null);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        onUpload(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+  const cardBg = isDark ? '#1e293b' : '#ffffff';
+  const textColor = isDark ? '#f8fafc' : '#0f172a';
+  const subTextColor = isDark ? '#94a3b8' : '#64748b';
+  const borderColor = isDark ? '#334155' : '#e2e8f0';
+
+  const handlePickGallery = async () => {
+    const res = await pickFromGallery();
+    if (res?.uri) {
+      setPreviewUri(res.uri);
+      setModalVisible(true);
     }
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        onUpload(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+  const handleTakePhoto = async () => {
+    const res = await takePhotoWithCamera();
+    if (res?.uri) {
+      setPreviewUri(res.uri);
+      setModalVisible(true);
     }
   };
 
-  if (photoUri) {
-    return (
-      <div
-        className={`relative w-full rounded-2xl overflow-hidden border shadow-sm group ${
-          compact ? 'aspect-square' : 'aspect-[4/5]'
-        } ${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-white'}`}
-      >
-        <img
-          src={photoUri}
-          alt={label}
-          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-        />
-        <button
-          onClick={onRemove}
-          type="button"
-          className="absolute top-3 right-3 w-9 h-9 rounded-full bg-slate-900/80 text-white flex items-center justify-center backdrop-blur-md hover:bg-rose-600 transition-colors shadow-lg"
-          title="Remover imagem"
-        >
-          <X className="w-5 h-5" />
-        </button>
-        <div className="absolute bottom-0 left-0 right-0 p-2.5 bg-gradient-to-t from-black/80 via-black/40 to-transparent text-white">
-          <p className="text-xs font-semibold text-center drop-shadow-xs">{label}</p>
-        </div>
-      </div>
-    );
-  }
+  const handleConfirmPhoto = () => {
+    if (previewUri) {
+      onUpload(previewUri);
+      setPreviewUri(null);
+      setModalVisible(false);
+    }
+  };
 
   return (
-    <div
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
-      onClick={() => fileInputRef.current?.click()}
-      className={`w-full rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all ${
-        compact ? 'aspect-square p-3' : 'aspect-[4/5] p-5'
-      } ${
-        isDark
-          ? 'border-slate-700 bg-slate-800/50 hover:bg-slate-800 hover:border-blue-500'
-          : 'border-slate-300 bg-slate-50/80 hover:bg-blue-50/50 hover:border-blue-500'
-      }`}
-    >
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={handleFileChange}
-        accept="image/*"
-        className="hidden"
-      />
+    <View style={styles.container}>
+      {photoUri ? (
+        <View style={[styles.photoCard, { backgroundColor: cardBg, borderColor }]}>
+          <Image source={{ uri: photoUri }} style={styles.previewImage} resizeMode="cover" />
+          
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={handlePickGallery}
+              style={[styles.actionBtn, { backgroundColor: '#3b82f6' }]}
+            >
+              <RefreshCw color="#ffffff" size={14} />
+              <Text style={styles.actionBtnText}>Substituir</Text>
+            </TouchableOpacity>
 
-      <div className={`rounded-full flex items-center justify-center mb-2.5 transition-transform group-hover:scale-110 ${
-        compact ? 'w-10 h-10 bg-blue-500/10 text-blue-500' : 'w-14 h-14 bg-blue-500/10 text-blue-500'
-      }`}>
-        <Upload className={compact ? 'w-5 h-5' : 'w-7 h-7'} />
-      </div>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={onRemove}
+              style={[styles.actionBtn, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}
+            >
+              <Trash2 color="#ef4444" size={14} />
+              <Text style={[styles.actionBtnText, { color: '#ef4444' }]}>Excluir</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        <View style={[styles.uploadBox, { backgroundColor: cardBg, borderColor }]}>
+          <View style={styles.iconCircle}>
+            <User color="#3b82f6" size={28} />
+          </View>
+          <Text style={[styles.labelTitle, { color: textColor }]}>{label}</Text>
+          <Text style={[styles.hintText, { color: subTextColor }]}>{hint}</Text>
 
-      <p className={`font-bold tracking-tight text-center ${compact ? 'text-xs' : 'text-sm'} ${
-        isDark ? 'text-white' : 'text-slate-800'
-      }`}>
-        {label}
-      </p>
+          {loading ? (
+            <ActivityIndicator color="#3b82f6" style={{ marginTop: 12 }} />
+          ) : (
+            <View style={styles.buttonRow}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handleTakePhoto}
+                style={[styles.pickerButton, { backgroundColor: '#3b82f6' }]}
+              >
+                <Camera color="#ffffff" size={16} />
+                <Text style={styles.pickerButtonText}>Tirar Foto</Text>
+              </TouchableOpacity>
 
-      <p className={`text-[11px] text-center mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-        {hint}
-      </p>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handlePickGallery}
+                style={[
+                  styles.pickerButton,
+                  { backgroundColor: isDark ? '#334155' : '#f1f5f9' },
+                ]}
+              >
+                <ImageIcon color={isDark ? '#93c5fd' : '#2563eb'} size={16} />
+                <Text style={[styles.pickerButtonText, { color: isDark ? '#93c5fd' : '#2563eb' }]}>
+                  Galeria
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
 
-      <div className="flex items-center gap-2 mt-3 pt-2 border-t border-slate-200/50 dark:border-slate-700/50 text-[10px] text-blue-500 font-semibold">
-        <Camera className="w-3.5 h-3.5" />
-        <span>Tirar foto ou galeria</span>
-      </div>
-    </div>
+      {/* MODAL PREVIEW E CONFIRMAÇÃO DA FOTO */}
+      <Modal visible={modalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: isDark ? '#0f172a' : '#ffffff' }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: textColor }]}>Confirmar Foto de Corpo</Text>
+              <TouchableOpacity onPress={() => setModalVisible(false)}>
+                <X color={subTextColor} size={20} />
+              </TouchableOpacity>
+            </View>
+
+            {previewUri && (
+              <Image source={{ uri: previewUri }} style={styles.confirmPreview} resizeMode="cover" />
+            )}
+
+            <Text style={[styles.confirmHint, { color: subTextColor }]}>
+              Certifique-se de que a foto mostra o corpo/busto de forma clara para o provador.
+            </Text>
+
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handleConfirmPhoto}
+                style={[styles.confirmBtn, { backgroundColor: '#10b981' }]}
+              >
+                <Check color="#ffffff" size={18} />
+                <Text style={styles.confirmBtnText}>Confirmar e Usar Foto</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setModalVisible(false)}
+                style={[styles.cancelBtn, { backgroundColor: isDark ? '#334155' : '#e2e8f0' }]}
+              >
+                <Text style={[styles.cancelBtnText, { color: textColor }]}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 };
+
+const styles = StyleSheet.create({
+  container: {
+    marginVertical: 4,
+  },
+  photoCard: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    padding: 8,
+  },
+  previewImage: {
+    width: '100%',
+    height: 240,
+    borderRadius: 16,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  actionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 12,
+    gap: 6,
+  },
+  actionBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  uploadBox: {
+    borderRadius: 20,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    padding: 16,
+    alignItems: 'center',
+  },
+  iconCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  labelTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  hintText: {
+    fontSize: 11,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 8,
+    width: '100%',
+  },
+  pickerButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 14,
+    gap: 6,
+  },
+  pickerButtonText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 24,
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  confirmPreview: {
+    width: '100%',
+    height: 280,
+    borderRadius: 16,
+    marginBottom: 12,
+  },
+  confirmHint: {
+    fontSize: 11,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  confirmActions: {
+    gap: 8,
+  },
+  confirmBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 14,
+    gap: 8,
+  },
+  confirmBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  cancelBtn: {
+    paddingVertical: 10,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  cancelBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+});

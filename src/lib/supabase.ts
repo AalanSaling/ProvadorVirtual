@@ -3,21 +3,21 @@ import { createClient } from '@supabase/supabase-js';
 
 const metaEnv = (import.meta as any).env || {};
 
-const supabaseUrl =
+export const supabaseUrlResolved =
   metaEnv.VITE_SUPABASE_URL ||
   metaEnv.EXPO_PUBLIC_SUPABASE_URL ||
   '';
 
-const supabaseAnonKey =
+export const supabaseAnonKeyResolved =
   metaEnv.VITE_SUPABASE_ANON_KEY ||
   metaEnv.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
   '';
 
 export const isSupabaseConfigured = (): boolean => {
   return (
-    Boolean(supabaseUrl) &&
-    Boolean(supabaseAnonKey) &&
-    !supabaseUrl.includes('placeholder')
+    Boolean(supabaseUrlResolved) &&
+    Boolean(supabaseAnonKeyResolved) &&
+    !supabaseUrlResolved.includes('placeholder')
   );
 };
 
@@ -28,8 +28,8 @@ if (!isSupabaseConfigured() && process.env.NODE_ENV === 'production') {
 }
 
 export const supabase = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co',
-  supabaseAnonKey || 'placeholder-anon-key',
+  supabaseUrlResolved || 'https://placeholder.supabase.co',
+  supabaseAnonKeyResolved || 'placeholder-anon-key',
   {
     auth: {
       persistSession: false,

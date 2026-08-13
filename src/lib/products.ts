@@ -1,165 +1,289 @@
 // src/lib/products.ts
-// Gerenciamento seguro de produtos com chamadas para a Edge Function admin-products
-
-import { ClothingItem } from '../types';
-import { supabase, isSupabaseConfigured } from './supabase';
+import { ClothingItem, ProductInput, Store, StoreAISettings, StoreRole } from '../types';
+import { supabase, isSupabaseConfigured, supabaseUrlResolved } from './supabase';
 import { getStoredCatalog, saveStoredCatalog } from './storage';
 
-/**
- * Busca a lista pública de produtos do banco de dados Supabase
- */
-export async function getProducts(): Promise<ClothingItem[]> {
-  if (isSupabaseConfigured()) {
-    try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .order('created_at', { ascending: false });
+const DEFAULT_DEMO_STORE: Store = {
+  id: 'demo-store-001',
+  name: 'Loja Conceito VTON',
+  slug: 'loja-conceito-vton',
+};
 
-      if (!error && data && data.length > 0) {
-        return data.map((item: any) => ({
-          id: item.id.toString(),
-          name: item.name,
-          category: item.category,
-          price: Number(item.price),
-          image: item.image_url || item.image,
-          description: item.description || '',
-          sizes: item.sizes || ['P', 'M', 'G'],
-          stock: item.stock || 10,
-        }));
-      }
-    } catch (e) {
-      console.warn('Falha ao buscar produtos remotos, carregando catálogo local:', e);
-    }
+/**
+ * Obter a loja atual ou lista de lojas do usuário
+ */
+export async function getUserStores(): Promise<{ store: Store; role: StoreRole }[]> {
+  if (!isSupabaseConfigured()) {
+    return [{ store: DEFAULT_DEMO_STORE, role: 'owner' }];
   }
 
-  return getStoredCatalog();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return [{ store: DEFAULT_DEMO_STORE, role: 'owner' }];
+  }
+
+  const { data, error } = await supabase
+    .from('store_members')
+    .select('role, store_id, stores(id, name, slug)')
+    .eq('user_id', user.id);
+
+  if (error || !data || data.length === 0) {
+    return [{ store: DEFAULT_DEMO_STORE, role: 'owner' }];
+  }
+
+  return data.map((item: any) => ({
+    store: item.stores,
+    role: item.role as StoreRole,
+  }));
 }
 
 /**
- * Cria um novo produto através da Edge Function admin-products
+ * Buscar produtos de uma loja do catálogo Supabase
+ */
+export async function getProducts(storeId: string = DEFAULT_DEMO_STORE.id): Promise<ClothingItem[]> {
+  if (!isSupabaseConfigured()) {
+    return await getStoredCatalog();
+  }
+
+  try {
+    const { data: dbProducts, error } = await supabase
+      .from('products')
+      .select('*, product_photos(storage_path, type)')
+      .eq('store_id', storeId)
+      .order('created_at', { ascending: false });
+
+    if (error || !dbProducts) {
+      console.warn('Fallback para catálogo local ao buscar produtos:', error);
+      return await getStoredCatalog();
+    }
+
+    return dbProducts.map((p: any) => {
+      const catalogPhoto = p.product_photos?.find((ph: any) => ph.type === 'catalog')?.storage_path;
+      const tryOnPhoto = p.product_photos?.find((ph: any) => ph.type === 'try_on_reference')?.storage_path;
+
+      return {
+        id: p.id,
+        store_id: p.store_id,
+        name: p.name,
+        description: p.description || '',
+        category: p.category,
+        garment_type: p.garment_type,
+        color: p.color,
+        material: p.material,
+        fit: p.fit,
+        price: Number(p.price) || 0,
+        currency: p.currency || 'BRL',
+        sizes: p.sizes || ['P', 'M', 'G'],
+        stock: p.stock ?? 10,
+        active: p.active ?? true,
+        image: catalogPhoto || p.image_url || 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=800',
+        try_on_reference_image: tryOnPhoto || catalogPhoto || p.image_url,
+        created_at: p.created_at,
+        updated_at: p.updated_at,
+      };
+    });
+  } catch (err) {
+    console.error('Erro na busca de produtos:', err);
+    return await getStoredCatalog();
+  }
+}
+
+/**
+ * Criar produto via Edge Function admin-products utilizando Supabase Auth Token
  */
 export async function createProduct(
-  product: Omit<ClothingItem, 'id'>,
-  imageBase64: string | undefined,
-  adminPassword: string
+  input: ProductInput,
+  catalogBase64?: string,
+  tryOnBase64?: string
 ): Promise<ClothingItem> {
-  if (isSupabaseConfigured()) {
-    const { data, error } = await supabase.functions.invoke('admin-products', {
-      headers: {
-        Authorization: `Bearer ${adminPassword}`,
-      },
-      body: {
-        action: 'create',
-        product,
-        imageBase64,
-      },
-    });
-
-    if (error || !data || data.error) {
-      throw new Error(
-        data?.error || error?.message || 'Falha ao criar produto. Verifique a senha administrativa.'
-      );
-    }
-
-    const created = data.product;
-    return {
-      id: created.id.toString(),
-      name: created.name,
-      category: created.category,
-      price: Number(created.price),
-      image: created.image_url || product.image,
-      description: created.description,
-      sizes: created.sizes,
-      stock: created.stock,
+  if (!isSupabaseConfigured()) {
+    const newItem: ClothingItem = {
+      id: Date.now().toString(),
+      store_id: input.store_id || DEFAULT_DEMO_STORE.id,
+      name: input.name,
+      description: input.description,
+      category: input.category,
+      price: input.price,
+      currency: input.currency || 'BRL',
+      sizes: input.sizes,
+      stock: input.stock,
+      active: input.active ?? true,
+      image: catalogBase64 || input.image_url,
+      try_on_reference_image: tryOnBase64 || input.try_on_reference_url || catalogBase64 || input.image_url,
     };
+    const catalog = await getStoredCatalog();
+    const updated = [newItem, ...catalog];
+    await saveStoredCatalog(updated);
+    return newItem;
   }
 
-  // Fallback Local Storage se o Supabase não estiver configurado
-  const localItem: ClothingItem = {
-    ...product,
-    id: Date.now().toString(),
-    image: imageBase64 || product.image,
-  };
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
 
-  const catalog = getStoredCatalog();
-  const updated = [localItem, ...catalog];
-  saveStoredCatalog(updated);
-  return localItem;
+  if (!token) {
+    throw new Error('Usuário precisa estar autenticado para criar produtos.');
+  }
+
+  const response = await fetch(`${supabaseUrlResolved}/functions/v1/admin-products`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      action: 'create',
+      store_id: input.store_id,
+      product: input,
+      catalogImageBase64: catalogBase64,
+      tryOnImageBase64: tryOnBase64,
+    }),
+  });
+
+  const resJson = await response.json();
+  if (!response.ok) {
+    throw new Error(resJson.error || 'Erro ao criar produto.');
+  }
+
+  return resJson.product;
 }
 
 /**
- * Atualiza um produto existente através da Edge Function admin-products
+ * Atualizar produto via Edge Function admin-products utilizando Supabase Auth Token
  */
 export async function updateProduct(
-  product: ClothingItem,
-  imageBase64: string | undefined,
-  adminPassword: string
+  input: ProductInput & { id: string },
+  catalogBase64?: string,
+  tryOnBase64?: string
 ): Promise<ClothingItem> {
-  if (isSupabaseConfigured()) {
-    const { data, error } = await supabase.functions.invoke('admin-products', {
-      headers: {
-        Authorization: `Bearer ${adminPassword}`,
-      },
-      body: {
-        action: 'update',
-        product,
-        imageBase64,
-      },
-    });
-
-    if (error || !data || data.error) {
-      throw new Error(
-        data?.error || error?.message || 'Falha ao atualizar produto. Verifique a senha administrativa.'
-      );
-    }
-
-    const updated = data.product;
-    return {
-      id: updated.id.toString(),
-      name: updated.name,
-      category: updated.category,
-      price: Number(updated.price),
-      image: updated.image_url || product.image,
-      description: updated.description,
-      sizes: updated.sizes,
-      stock: updated.stock,
+  if (!isSupabaseConfigured()) {
+    const catalog = await getStoredCatalog();
+    const updatedItem: ClothingItem = {
+      id: input.id,
+      store_id: input.store_id || DEFAULT_DEMO_STORE.id,
+      name: input.name,
+      description: input.description,
+      category: input.category,
+      price: input.price,
+      currency: input.currency || 'BRL',
+      sizes: input.sizes,
+      stock: input.stock,
+      active: input.active,
+      image: catalogBase64 || input.image_url,
+      try_on_reference_image: tryOnBase64 || input.try_on_reference_url || catalogBase64 || input.image_url,
     };
+    const updatedCatalog = catalog.map((item) => (item.id === input.id ? updatedItem : item));
+    await saveStoredCatalog(updatedCatalog);
+    return updatedItem;
   }
 
-  // Fallback Local Storage
-  const catalog = getStoredCatalog();
-  const updatedCatalog = catalog.map((item) =>
-    item.id === product.id ? { ...product, image: imageBase64 || product.image } : item
-  );
-  saveStoredCatalog(updatedCatalog);
-  return product;
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+
+  if (!token) {
+    throw new Error('Usuário precisa estar autenticado para atualizar produtos.');
+  }
+
+  const response = await fetch(`${supabaseUrlResolved}/functions/v1/admin-products`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      action: 'update',
+      store_id: input.store_id,
+      product: input,
+      catalogImageBase64: catalogBase64,
+      tryOnImageBase64: tryOnBase64,
+    }),
+  });
+
+  const resJson = await response.json();
+  if (!response.ok) {
+    throw new Error(resJson.error || 'Erro ao atualizar produto.');
+  }
+
+  return resJson.product;
 }
 
 /**
- * Exclui um produto através da Edge Function admin-products
+ * Excluir produto via Edge Function admin-products utilizando Supabase Auth Token
  */
-export async function deleteProduct(id: string, adminPassword: string): Promise<void> {
-  if (isSupabaseConfigured()) {
-    const { data, error } = await supabase.functions.invoke('admin-products', {
-      headers: {
-        Authorization: `Bearer ${adminPassword}`,
-      },
-      body: {
-        action: 'delete',
-        product: { id },
-      },
-    });
-
-    if (error || (data && data.error)) {
-      throw new Error(
-        data?.error || error?.message || 'Falha ao excluir produto. Verifique a senha administrativa.'
-      );
-    }
+export async function deleteProduct(productId: string, storeId: string): Promise<void> {
+  if (!isSupabaseConfigured()) {
+    const catalog = await getStoredCatalog();
+    const filtered = catalog.filter((item) => item.id !== productId);
+    await saveStoredCatalog(filtered);
+    return;
   }
 
-  // Fallback Local Storage
-  const catalog = getStoredCatalog();
-  const filtered = catalog.filter((item) => item.id !== id);
-  saveStoredCatalog(filtered);
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+
+  if (!token) {
+    throw new Error('Usuário precisa estar autenticado para excluir produtos.');
+  }
+
+  const response = await fetch(`${supabaseUrlResolved}/functions/v1/admin-products`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      action: 'delete',
+      store_id: storeId,
+      product: { id: productId },
+    }),
+  });
+
+  const resJson = await response.json();
+  if (!response.ok) {
+    throw new Error(resJson.error || 'Erro ao excluir produto.');
+  }
+}
+
+/**
+ * Buscar e atualizar configurações de Provedor de IA da loja
+ */
+export async function getStoreAISettings(storeId: string): Promise<StoreAISettings> {
+  const defaultSettings: StoreAISettings = {
+    store_id: storeId,
+    provider_mode: 'both',
+    enabled: true,
+  };
+
+  if (!isSupabaseConfigured()) return defaultSettings;
+
+  const { data } = await supabase
+    .from('store_ai_settings')
+    .select('*')
+    .eq('store_id', storeId)
+    .maybeSingle();
+
+  return data || defaultSettings;
+}
+
+export async function updateStoreAISettings(
+  storeId: string,
+  provider_mode: 'perfectcorp' | 'google' | 'both',
+  enabled: boolean
+): Promise<StoreAISettings> {
+  const settings: StoreAISettings = {
+    store_id: storeId,
+    provider_mode,
+    enabled,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (!isSupabaseConfigured()) return settings;
+
+  const { data, error } = await supabase
+    .from('store_ai_settings')
+    .upsert(settings)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
 }

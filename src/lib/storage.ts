@@ -1,193 +1,124 @@
 // src/lib/storage.ts
-// Gerenciamento de armazenamento seguro de chaves, senhas e consentimento LGPD
-
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { ClothingItem, SavedTryOn } from '../types';
 import { initialCatalog } from '../data/catalog';
 
-const API_KEY_STORAGE = 'provador_virtual_api_key';
-const ADMIN_PWD_STORAGE = 'provador_virtual_admin_password';
-const USER_PHOTO_STORAGE = 'provador_virtual_user_photo';
-const CATALOG_STORAGE = 'provador_virtual_custom_catalog';
-const TRYON_HISTORY_STORAGE = 'provador_virtual_history';
-const LGPD_CONSENT_STORAGE = 'provador_virtual_lgpd_consent';
+const USER_PHOTO_KEY = 'provador_virtual_user_photo';
+const LGPD_CONSENT_KEY = 'provador_virtual_lgpd_consent';
+const CATALOG_KEY = 'provador_virtual_catalog';
+const TRYON_HISTORY_KEY = 'provador_virtual_history';
 
-// Memory cache fallback para Web
-let inMemoryApiKey: string | null = null;
-let inMemoryAdminPassword: string | null = null;
-
-// API Key (PerfectCorp / Replicate)
-export function getApiKey(): string | null {
+// Safe wrapper for SecureStore / AsyncStorage
+async function safeGetSecure(key: string): Promise<string | null> {
   try {
-    if (typeof localStorage !== 'undefined') {
-      return localStorage.getItem(API_KEY_STORAGE) || inMemoryApiKey;
+    const isAvailable = await SecureStore.isAvailableAsync();
+    if (isAvailable) {
+      return await SecureStore.getItemAsync(key);
     }
-  } catch {
-    // Fallback
-  }
-  return inMemoryApiKey;
-}
-
-export function saveApiKey(key: string): void {
-  const trimmed = key.trim();
-  inMemoryApiKey = trimmed;
-  try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(API_KEY_STORAGE, trimmed);
-    }
+    return await AsyncStorage.getItem(key);
   } catch (e) {
-    console.error('Erro ao salvar API key em storage local:', e);
+    return await AsyncStorage.getItem(key);
   }
 }
 
-export function deleteApiKey(): void {
-  inMemoryApiKey = null;
+async function safeSetSecure(key: string, value: string): Promise<void> {
   try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.removeItem(API_KEY_STORAGE);
+    const isAvailable = await SecureStore.isAvailableAsync();
+    if (isAvailable) {
+      await SecureStore.setItemAsync(key, value);
+      return;
     }
+    await AsyncStorage.setItem(key, value);
   } catch (e) {
-    console.error('Erro ao remover API key:', e);
+    await AsyncStorage.setItem(key, value);
   }
 }
 
-// Senha de Administrador para CRUD de produtos
-export function getAdminPassword(): string | null {
+async function safeDeleteSecure(key: string): Promise<void> {
   try {
-    if (typeof localStorage !== 'undefined') {
-      return localStorage.getItem(ADMIN_PWD_STORAGE) || inMemoryAdminPassword;
+    const isAvailable = await SecureStore.isAvailableAsync();
+    if (isAvailable) {
+      await SecureStore.deleteItemAsync(key);
+      return;
     }
-  } catch {
-    // Fallback
-  }
-  return inMemoryAdminPassword;
-}
-
-export function saveAdminPassword(password: string): void {
-  const trimmed = password.trim();
-  inMemoryAdminPassword = trimmed;
-  try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(ADMIN_PWD_STORAGE, trimmed);
-    }
+    await AsyncStorage.removeItem(key);
   } catch (e) {
-    console.error('Erro ao salvar senha administrativa:', e);
+    await AsyncStorage.removeItem(key);
   }
 }
 
-export function deleteAdminPassword(): void {
-  inMemoryAdminPassword = null;
+// --- LGPD Consent ---
+export async function getLgpdConsent(): Promise<boolean> {
   try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.removeItem(ADMIN_PWD_STORAGE);
-    }
-  } catch (e) {
-    console.error('Erro ao remover senha administrativa:', e);
-  }
-}
-
-// LGPD Consent
-export function hasUserConsentedLgpd(): boolean {
-  try {
-    if (typeof localStorage !== 'undefined') {
-      return localStorage.getItem(LGPD_CONSENT_STORAGE) === 'true';
-    }
+    const val = await AsyncStorage.getItem(LGPD_CONSENT_KEY);
+    return val === 'true';
   } catch {
     return false;
   }
-  return false;
 }
 
-export function saveLgpdConsent(consented: boolean): void {
+export async function saveLgpdConsent(consented: boolean): Promise<void> {
   try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(LGPD_CONSENT_STORAGE, consented ? 'true' : 'false');
-    }
+    await AsyncStorage.setItem(LGPD_CONSENT_KEY, consented ? 'true' : 'false');
   } catch (e) {
-    console.error('Erro ao salvar consentimento LGPD:', e);
+    console.error('Error saving LGPD consent:', e);
   }
 }
 
-// Foto temporária do usuário
-export function getSavedUserPhoto(): string | null {
-  try {
-    if (typeof localStorage !== 'undefined') {
-      return localStorage.getItem(USER_PHOTO_STORAGE);
-    }
-  } catch {
-    return null;
-  }
-  return null;
+// --- User Photo (Local only, secure) ---
+export async function getSavedUserPhoto(): Promise<string | null> {
+  return await safeGetSecure(USER_PHOTO_KEY);
 }
 
-export function saveUserPhoto(photoDataUri: string): void {
-  try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(USER_PHOTO_STORAGE, photoDataUri);
-    }
-  } catch (e) {
-    console.error('Erro ao salvar foto do usuário:', e);
-  }
+export async function saveUserPhoto(photoUri: string): Promise<void> {
+  await safeSetSecure(USER_PHOTO_KEY, photoUri);
 }
 
-export function removeSavedUserPhoto(): void {
-  try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.removeItem(USER_PHOTO_STORAGE);
-    }
-  } catch (e) {
-    console.error('Erro ao remover foto do usuário:', e);
-  }
+export async function removeSavedUserPhoto(): Promise<void> {
+  await safeDeleteSecure(USER_PHOTO_KEY);
 }
 
-// Catálogo
-export function getStoredCatalog(): ClothingItem[] {
+// --- Local Catalog Storage (fallback before backend API connection) ---
+export async function getStoredCatalog(): Promise<ClothingItem[]> {
   try {
-    if (typeof localStorage !== 'undefined') {
-      const raw = localStorage.getItem(CATALOG_STORAGE);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
+    const raw = await AsyncStorage.getItem(CATALOG_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
       }
     }
   } catch (e) {
-    console.error('Erro ao carregar catálogo local:', e);
+    console.error('Error loading stored catalog:', e);
   }
   return initialCatalog;
 }
 
-export function saveStoredCatalog(catalog: ClothingItem[]): void {
+export async function saveStoredCatalog(catalog: ClothingItem[]): Promise<void> {
   try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(CATALOG_STORAGE, JSON.stringify(catalog));
-    }
+    await AsyncStorage.setItem(CATALOG_KEY, JSON.stringify(catalog));
   } catch (e) {
-    console.error('Erro ao salvar catálogo:', e);
+    console.error('Error saving catalog:', e);
   }
 }
 
-// Histórico de Provador
-export function getTryOnHistory(): SavedTryOn[] {
+// --- Try On History ---
+export async function getTryOnHistory(): Promise<SavedTryOn[]> {
   try {
-    if (typeof localStorage !== 'undefined') {
-      const raw = localStorage.getItem(TRYON_HISTORY_STORAGE);
-      return raw ? JSON.parse(raw) : [];
-    }
+    const raw = await AsyncStorage.getItem(TRYON_HISTORY_KEY);
+    return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
-  return [];
 }
 
-export function addTryOnToHistory(item: SavedTryOn): void {
+export async function addTryOnToHistory(item: SavedTryOn): Promise<void> {
   try {
-    const current = getTryOnHistory();
+    const current = await getTryOnHistory();
     const updated = [item, ...current.slice(0, 19)];
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(TRYON_HISTORY_STORAGE, JSON.stringify(updated));
-    }
+    await AsyncStorage.setItem(TRYON_HISTORY_KEY, JSON.stringify(updated));
   } catch (e) {
-    console.error('Erro ao salvar histórico de provador:', e);
+    console.error('Error saving try-on history:', e);
   }
 }

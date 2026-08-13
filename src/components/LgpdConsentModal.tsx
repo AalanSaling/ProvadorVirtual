@@ -1,9 +1,7 @@
 // src/components/LgpdConsentModal.tsx
-// Modal de consentimento de privacidade (LGPD) antes do primeiro uso do provador virtual
-
 import React from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { ShieldCheck, Lock, EyeOff, AlertTriangle } from 'lucide-react';
+import { View, Text, Modal, TouchableOpacity, StyleSheet } from 'react-native';
+import { ShieldCheck, Lock, EyeOff, AlertTriangle } from 'lucide-react-native';
 
 interface LgpdConsentModalProps {
   visible: boolean;
@@ -16,73 +14,159 @@ export const LgpdConsentModal: React.FC<LgpdConsentModalProps> = ({
   visible,
   onAccept,
   onDecline,
-  isDark = false,
+  isDark = true,
 }) => {
   if (!visible) return null;
 
+  const cardBg = isDark ? '#0f172a' : '#ffffff';
+  const textColor = isDark ? '#f8fafc' : '#0f172a';
+  const subTextColor = isDark ? '#94a3b8' : '#64748b';
+  const boxBg = isDark ? '#1e293b' : '#f8fafc';
+
   return (
-    <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
-        <motion.div
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.9, opacity: 0 }}
-          transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-          className={`w-full max-w-sm rounded-3xl p-6 text-center shadow-2xl border ${
-            isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'
-          }`}
-        >
-          {/* Shield Icon */}
-          <div className="w-16 h-16 rounded-full bg-emerald-500/10 text-emerald-500 mx-auto flex items-center justify-center mb-4">
-            <ShieldCheck className="w-9 h-9 stroke-[2.5]" />
-          </div>
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={styles.overlay}>
+        <View style={[styles.card, { backgroundColor: cardBg }]}>
+          <View style={styles.iconCircle}>
+            <ShieldCheck color="#10b981" size={32} />
+          </View>
 
-          <h3 className="text-lg font-extrabold tracking-tight mb-2">
+          <Text style={[styles.title, { color: textColor }]}>
             Privacidade & Proteção de Dados (LGPD)
-          </h3>
+          </Text>
 
-          <p className={`text-xs leading-relaxed mb-4 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
-            A sua foto de corpo é tratada como dado pessoal sensível. Para usar o Provador Virtual IA, você precisa concordar com os termos abaixo:
-          </p>
+          <Text style={[styles.description, { color: subTextColor }]}>
+            A sua foto de corpo é tratada com total sigilo. Para prosseguir com o Provador Virtual, confirme sua concordância com os termos:
+          </Text>
 
-          <div className={`p-3.5 rounded-2xl text-left space-y-2 mb-5 text-[11px] ${
-            isDark ? 'bg-slate-800/80 border border-slate-700/60' : 'bg-slate-50 border border-slate-200/80'
-          }`}>
-            <div className="flex items-start gap-2">
-              <Lock className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-              <span><strong>Sem Armazenamento em Nuvem:</strong> Sua foto não é salva no servidor do app.</span>
-            </div>
+          <View style={[styles.infoBox, { backgroundColor: boxBg }]}>
+            <View style={styles.infoRow}>
+              <Lock color="#10b981" size={16} />
+              <Text style={[styles.infoText, { color: textColor }]}>
+                <Text style={styles.boldText}>Sem Armazenamento Público: </Text>
+                Sua foto fica no seu dispositivo e não é pública.
+              </Text>
+            </View>
 
-            <div className="flex items-start gap-2">
-              <EyeOff className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
-              <span><strong>Processamento Temporário:</strong> A foto é enviada de forma criptografada à API da PerfectCorp/Replicate apenas para gerar a visualização da roupa.</span>
-            </div>
+            <View style={styles.infoRow}>
+              <EyeOff color="#3b82f6" size={16} />
+              <Text style={[styles.infoText, { color: textColor }]}>
+                <Text style={styles.boldText}>Processamento Seguro: </Text>
+                Transmissão criptografada diretamente para serviços autorizados de IA.
+              </Text>
+            </View>
 
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-              <span><strong>Controle Total:</strong> Você pode excluir sua foto a qualquer momento no app.</span>
-            </div>
-          </div>
+            <View style={styles.infoRow}>
+              <AlertTriangle color="#f59e0b" size={16} />
+              <Text style={[styles.infoText, { color: textColor }]}>
+                <Text style={styles.boldText}>Controle Total: </Text>
+                Você pode apagar sua foto a qualquer momento nas configurações.
+              </Text>
+            </View>
+          </View>
 
-          <div className="space-y-2">
-            <button
-              onClick={onAccept}
-              className="w-full py-3.5 px-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-bold text-xs shadow-lg shadow-emerald-500/25 transition-all active:scale-95"
+          <View style={styles.actions}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={onAccept}
+              style={[styles.acceptBtn, { backgroundColor: '#10b981' }]}
             >
-              Concordar e Usar o Provador
-            </button>
+              <Text style={styles.acceptBtnText}>Concordar e Usar o Provador</Text>
+            </TouchableOpacity>
 
-            <button
-              onClick={onDecline}
-              className={`w-full py-2.5 px-4 rounded-2xl text-xs font-semibold transition-colors ${
-                isDark ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-500 hover:bg-slate-100'
-              }`}
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={onDecline}
+              style={styles.declineBtn}
             >
-              Recusar (Navegar Apenas no Catálogo)
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    </AnimatePresence>
+              <Text style={[styles.declineBtnText, { color: subTextColor }]}>
+                Recusar (Apenas Catálogo)
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 };
+
+const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 24,
+    padding: 20,
+    alignItems: 'center',
+  },
+  iconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  title: {
+    fontSize: 16,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  description: {
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  infoBox: {
+    width: '100%',
+    borderRadius: 16,
+    padding: 12,
+    gap: 10,
+    marginBottom: 18,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  infoText: {
+    fontSize: 11,
+    flex: 1,
+    lineHeight: 16,
+  },
+  boldText: {
+    fontWeight: '800',
+  },
+  actions: {
+    width: '100%',
+    gap: 8,
+  },
+  acceptBtn: {
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+  },
+  acceptBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  declineBtn: {
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  declineBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+});
