@@ -183,6 +183,263 @@ async function startServer() {
 
   const tryOnService = new TryOnService();
 
+  // Serve Interactive Web Preview Dashboard for the AI Studio Preview iFrame
+  app.get('/', (req, res) => {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ProvadorVirtual - API & Web Preview</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --accent: #10b981;
+      --danger: #ef4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 20px; line-height: 1.5; }
+    .container { max-width: 1000px; margin: 0 auto; }
+    header { display: flex; align-items: center; justify-content: space-between; padding-bottom: 20px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+    .logo { display: flex; align-items: center; gap: 12px; }
+    .badge { background: rgba(99, 102, 241, 0.2); color: #818cf8; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid rgba(99, 102, 241, 0.4); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 24px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+    .card h2 { font-size: 18px; margin-bottom: 12px; color: #f1f5f9; display: flex; align-items: center; justify-content: space-between; }
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .status-active { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+    .status-inactive { background: var(--danger); }
+    .btn { background: var(--primary); color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; font-size: 14px; width: 100%; margin-top: 10px; }
+    .btn:hover { background: var(--primary-hover); }
+    .btn-secondary { background: #334155; color: #f8fafc; }
+    .btn-secondary:hover { background: #475569; }
+    form label { display: block; font-size: 13px; color: var(--text-muted); margin-top: 12px; margin-bottom: 4px; font-weight: 500; }
+    select, input { width: 100%; padding: 10px; background: #0f172a; border: 1px solid var(--border); border-radius: 6px; color: white; font-size: 14px; }
+    .preview-box { margin-top: 16px; background: #0f172a; border: 1px dashed var(--border); border-radius: 8px; min-height: 200px; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; }
+    .preview-box img { max-width: 100%; max-height: 350px; object-fit: contain; }
+    .loader { border: 3px solid #334155; border-top: 3px solid var(--primary); border-radius: 50%; width: 28px; height: 28px; animation: spin 1s linear infinite; display: none; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .code-block { background: #090d16; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 12px; color: #38bdf8; overflow-x: auto; margin-top: 10px; border: 1px solid #1e293b; }
+    .notice { background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399; padding: 12px; border-radius: 8px; font-size: 13px; margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">
+        <h1 style="font-size:22px; font-weight:700;">👕 ProvadorVirtual</h1>
+        <span class="badge">Expo Native + Express API</span>
+      </div>
+      <div style="font-size:13px; color: var(--text-muted);">
+        Backend URL: <code style="color:#a5b4fc">http://localhost:3000</code>
+      </div>
+    </header>
+
+    <div class="notice">
+      📱 <strong>Aplicativo Expo Nativo (iOS & Android)</strong>: O código mobile principal React Native/Expo está pronto em <code>src/</code> e <code>index.js</code>. Abaixo você pode testar ao vivo o backend e as APIs do Provador Virtual diretamente na janela de preview!
+    </div>
+
+    <div class="grid">
+      <!-- Card Status do Servidor -->
+      <div class="card">
+        <h2>
+          Status dos Provedores
+          <span class="status-dot status-active" id="health-dot"></span>
+        </h2>
+        <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+          Conectado ao servidor de orquestração de IA.
+        </div>
+        <div id="provider-info" class="code-block">Carregando status...</div>
+        <button class="btn btn-secondary" style="margin-top:12px;" onclick="checkHealth()">Atualizar Status</button>
+      </div>
+
+      <!-- Card Configuração de IA da Loja -->
+      <div class="card">
+        <h2>⚙️ Motor de IA da Loja</h2>
+        <form id="settings-form" onsubmit="saveSettings(event)">
+          <label>Selecione o Provedor de IA:</label>
+          <select id="provider_mode">
+            <option value="both">Ambos (Perfect Corp + Google Gemini)</option>
+            <option value="perfectcorp">Perfect Corp (Especializado em Roupas)</option>
+            <option value="google">Google Gemini (Visão Multimodal)</option>
+          </select>
+
+          <button type="submit" class="btn">Salvar Configuração</button>
+        </form>
+        <div id="settings-output" style="margin-top:10px; font-size:12px; color:#34d399;"></div>
+      </div>
+    </div>
+
+    <!-- Provador Virtual Interactive Tester -->
+    <div class="card" style="margin-bottom: 24px;">
+      <h2>✨ Testar Provador Virtual (Virtual Try-On)</h2>
+      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+        Selecione as imagens de teste para simular uma geração real do Provador Virtual via backend API.
+      </p>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+        <div>
+          <label>1. Foto da Pessoa (Person):</label>
+          <select id="person_select" onchange="updatePersonPreview()">
+            <option value="demo1">Modelo Feminina 1</option>
+            <option value="demo2">Modelo Masculino 2</option>
+          </select>
+          <div class="preview-box" id="person-box">
+            <img id="person-img" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&q=80" alt="Pessoa">
+          </div>
+        </div>
+
+        <div>
+          <label>2. Foto da Peça (Garment):</label>
+          <select id="garment_select" onchange="updateGarmentPreview()">
+            <option value="garment1">Vestido Floral (Full Body)</option>
+            <option value="garment2">Camiseta Casual (Upper Body)</option>
+            <option value="garment3">Calça Jeans (Lower Body)</option>
+          </select>
+          <div class="preview-box" id="garment-box">
+            <img id="garment-img" src="https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=600&q=80" alt="Roupa">
+          </div>
+        </div>
+
+        <div>
+          <label>3. Resultado da IA:</label>
+          <div style="margin-bottom: 8px;">
+            <button class="btn" id="generate-btn" onclick="runTryOnTest()">Gerar Provador Virtual</button>
+          </div>
+          <div class="preview-box" id="result-box">
+            <div class="loader" id="loader"></div>
+            <span id="result-placeholder" style="font-size:12px; color:var(--text-muted); padding:10px; text-align:center;">
+              Clique em "Gerar" para processar no backend.
+            </span>
+            <img id="result-img" style="display:none;" alt="Resultado Provador">
+          </div>
+        </div>
+      </div>
+
+      <div id="result-details" class="code-block" style="display:none; margin-top:16px;"></div>
+    </div>
+  </div>
+
+  <script>
+    const personUrls = {
+      demo1: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&q=80',
+      demo2: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=600&q=80'
+    };
+
+    const garmentUrls = {
+      garment1: { url: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=600&q=80', cat: 'full_body' },
+      garment2: { url: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=600&q=80', cat: 'upper_body' },
+      garment3: { url: 'https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=600&q=80', cat: 'lower_body' }
+    };
+
+    function updatePersonPreview() {
+      const val = document.getElementById('person_select').value;
+      document.getElementById('person-img').src = personUrls[val];
+    }
+
+    function updateGarmentPreview() {
+      const val = document.getElementById('garment_select').value;
+      document.getElementById('garment-img').src = garmentUrls[val].url;
+    }
+
+    async function checkHealth() {
+      try {
+        const res = await fetch('/api/health');
+        const data = await res.json();
+        document.getElementById('provider-info').textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        document.getElementById('provider-info').textContent = 'Erro ao conectar com API de Saúde.';
+      }
+    }
+
+    async function saveSettings(e) {
+      e.preventDefault();
+      const mode = document.getElementById('provider_mode').value;
+      const output = document.getElementById('settings-output');
+      output.textContent = 'Salvando...';
+
+      try {
+        const res = await fetch('/api/admin/store-ai-settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ store_id: 'demo-store-001', provider_mode: mode, enabled: true })
+        });
+        const data = await res.json();
+        if (data.success) {
+          output.textContent = '✅ Motor de IA atualizado para: ' + mode.toUpperCase();
+        } else {
+          output.textContent = '❌ Erro: ' + (data.error || 'Falha ao salvar');
+        }
+      } catch (err) {
+        output.textContent = '❌ Erro de conexão com servidor';
+      }
+    }
+
+    async function runTryOnTest() {
+      const pVal = document.getElementById('person_select').value;
+      const gVal = document.getElementById('garment_select').value;
+      const mode = document.getElementById('provider_mode').value;
+
+      const loader = document.getElementById('loader');
+      const placeholder = document.getElementById('result-placeholder');
+      const resultImg = document.getElementById('result-img');
+      const details = document.getElementById('result-details');
+      const btn = document.getElementById('generate-btn');
+
+      loader.style.display = 'block';
+      placeholder.style.display = 'none';
+      resultImg.style.display = 'none';
+      details.style.display = 'none';
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/admin/test-provider', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            provider: mode === 'google' ? 'google' : 'perfectcorp',
+            person_image: personUrls[pVal],
+            garment_image: garmentUrls[gVal].url,
+            garment_category: garmentUrls[gVal].cat,
+            store_id: 'demo-store-001'
+          })
+        });
+
+        const data = await res.json();
+        loader.style.display = 'none';
+        btn.disabled = false;
+
+        details.style.display = 'block';
+        details.textContent = JSON.stringify(data, null, 2);
+
+        if (data.result_url) {
+          resultImg.src = data.result_url;
+          resultImg.style.display = 'block';
+        } else {
+          placeholder.style.display = 'block';
+          placeholder.textContent = 'Nenhum resultado de imagem (Verifique o log de erro no JSON).';
+        }
+      } catch (err) {
+        loader.style.display = 'none';
+        btn.disabled = false;
+        placeholder.style.display = 'block';
+        placeholder.textContent = 'Erro ao processar chamada ao backend.';
+      }
+    }
+
+    checkHealth();
+  </script>
+</body>
+</html>`);
+  });
+
   // Public Health & Provider Status Check Route
   app.get('/api/health', (req, res) => {
     res.json({
