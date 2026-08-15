@@ -1,399 +1,273 @@
 // src/components/TryOnResultModal.tsx
 import React from 'react';
-import { View, Text, Modal, Image, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
-import { X, Sparkles, ShoppingBag, AlertCircle, CheckCircle2, ShieldAlert } from 'lucide-react-native';
-import { TryOnApiResponse } from '../services/vtonService';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Modal,
+  Image,
+  TouchableOpacity,
+  SafeAreaView,
+  Alert,
+} from 'react-native';
+import { X, Sparkles, RefreshCw, Camera, Download, Share2 } from 'lucide-react-native';
+import { colors, spacing, borderRadius, shadows } from '../theme';
+import { useI18n } from '../i18n';
+import { TryOnResult } from '../types';
 
 interface TryOnResultModalProps {
   visible: boolean;
-  tryOnData: TryOnApiResponse | null;
-  personImage: string | null;
-  garmentName: string;
-  errorMessage?: string | null;
+  result: TryOnResult | null;
+  productName?: string;
   onClose: () => void;
-  onTryAnother: () => void;
-  isDark?: boolean;
+  onPickAnotherGarment: () => void;
+  onChangePhoto: () => void;
 }
 
-export const TryOnResultModal: React.FC<TryOnResultModalProps> = ({
+export function TryOnResultModal({
   visible,
-  tryOnData,
-  personImage,
-  garmentName,
-  errorMessage,
+  result,
+  productName = 'Vestido Midi Floral Primavera',
   onClose,
-  onTryAnother,
-  isDark = true,
-}) => {
-  if (!visible) return null;
+  onPickAnotherGarment,
+  onChangePhoto,
+}: TryOnResultModalProps) {
+  const { t } = useI18n();
 
-  const cardBg = isDark ? '#0f172a' : '#ffffff';
-  const textColor = isDark ? '#f8fafc' : '#0f172a';
-  const subTextColor = isDark ? '#94a3b8' : '#64748b';
-  const borderColor = isDark ? '#334155' : '#e2e8f0';
-  const innerBg = isDark ? '#1e293b' : '#f8fafc';
+  if (!visible || !result || !result.resultImage) return null;
 
-  const perfectCorpRes = tryOnData?.results?.perfectcorp;
-  const googleRes = tryOnData?.results?.google;
-  const isBoth = tryOnData?.mode === 'both';
+  function handleSave() {
+    Alert.alert(t('savedSuccessTitle'), t('savedSuccessMsg'));
+  }
+
+  function handleShare() {
+    Alert.alert(t('sharePreparingTitle'), t('sharePreparingMsg'));
+  }
 
   return (
-    <Modal visible={visible} transparent animationType="slide">
-      <View style={styles.overlay}>
-        <View style={[styles.card, { backgroundColor: cardBg, borderColor }]}>
+    <Modal visible={visible} animationType="slide" transparent={false}>
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.container}>
           {/* Header */}
           <View style={styles.header}>
-            <View style={styles.titleRow}>
-              <View style={styles.sparkleBox}>
-                <Sparkles color="#ffffff" size={18} />
+            <View style={styles.headerTitleGroup}>
+              <View style={styles.badgeRow}>
+                <Sparkles size={12} color={colors.accent} />
+                <Text style={styles.badgeText}>{t('lookGeneratedBadge')}</Text>
               </View>
-              <View>
-                <Text style={[styles.title, { color: textColor }]}>Provador Virtual IA Real</Text>
-                <Text style={[styles.subtitle, { color: subTextColor }]}>
-                  {isBoth ? 'Modo Comparativo (Ambos os Provedores)' : 'Resultado do Processamento'}
-                </Text>
-              </View>
+              <Text style={styles.title}>{t('yourLookTitle')}</Text>
+              <Text style={styles.productName} numberOfLines={1}>
+                {productName}
+              </Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeIconBtn}>
-              <X color={subTextColor} size={22} />
+
+            <TouchableOpacity style={styles.closeButton} onPress={onClose} activeOpacity={0.7}>
+              <X size={18} color={colors.textPrimary} />
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-            {/* General Error (if network/server error before provider execution) */}
-            {errorMessage ? (
-              <View style={[styles.errorBox, { backgroundColor: 'rgba(244, 63, 94, 0.1)', borderColor: '#f43f5e' }]}>
-                <AlertCircle color="#f43f5e" size={28} />
-                <View style={styles.errorTextCol}>
-                  <Text style={styles.errorTitle}>Não foi possível gerar o provador virtual</Text>
-                  <Text style={styles.errorText}>{errorMessage}</Text>
-                </View>
-              </View>
-            ) : null}
+          {/* Large Image Showcase */}
+          <View style={styles.imageCard}>
+            <Image
+              source={{ uri: result.resultImage }}
+              style={styles.resultImage}
+              resizeMode="contain"
+            />
 
-            {/* Product Title Badge */}
-            <View style={[styles.productBadge, { backgroundColor: innerBg, borderColor }]}>
-              <Text style={[styles.productBadgeLabel, { color: subTextColor }]}>PEÇA EXPERIMENTADA:</Text>
-              <Text style={[styles.productBadgeName, { color: textColor }]}>{garmentName}</Text>
+            <View style={styles.providerTag}>
+              <Text style={styles.providerTagText}>✦ {t('aiEngineLabel')}</Text>
+            </View>
+          </View>
+
+          {/* Actions Panel */}
+          <View style={styles.footer}>
+            {/* Quick Share / Save Row */}
+            <View style={styles.utilityRow}>
+              <TouchableOpacity style={styles.utilityButton} onPress={handleSave} activeOpacity={0.8}>
+                <Download size={15} color={colors.textPrimary} />
+                <Text style={styles.utilityText}>{t('saveLook')}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.utilityButton} onPress={handleShare} activeOpacity={0.8}>
+                <Share2 size={15} color={colors.textPrimary} />
+                <Text style={styles.utilityText}>{t('shareLook')}</Text>
+              </TouchableOpacity>
             </View>
 
-            {/* RESULTS DISPLAY */}
-            {isBoth ? (
-              <View style={styles.resultsStack}>
-                {/* 1. Perfect Corp Result Card */}
-                <View style={[styles.providerResultCard, { backgroundColor: innerBg, borderColor }]}>
-                  <View style={styles.providerHeader}>
-                    <Text style={[styles.providerName, { color: textColor }]}>RESULTADO PERFECT CORP</Text>
-                    {perfectCorpRes?.status === 'success' ? (
-                      <View style={styles.successTag}>
-                        <CheckCircle2 color="#10b981" size={12} />
-                        <Text style={styles.successTagText}>Concluído</Text>
-                      </View>
-                    ) : (
-                      <View style={styles.failTag}>
-                        <ShieldAlert color="#f43f5e" size={12} />
-                        <Text style={styles.failTagText}>Falhou</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {perfectCorpRes?.status === 'success' && perfectCorpRes.image ? (
-                    <Image source={{ uri: perfectCorpRes.image }} style={styles.resultImage} resizeMode="contain" />
-                  ) : (
-                    <View style={styles.failedBox}>
-                      <AlertCircle color="#f43f5e" size={24} />
-                      <Text style={styles.failedTitle}>
-                        {perfectCorpRes?.errorCode || 'PERFECTCORP_PROVIDER_ERROR'}
-                      </Text>
-                      <Text style={styles.failedText}>
-                        {perfectCorpRes?.errorMessage || 'Não foi possível gerar com a Perfect Corp neste momento.'}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-
-                {/* 2. Google Result Card */}
-                <View style={[styles.providerResultCard, { backgroundColor: innerBg, borderColor }]}>
-                  <View style={styles.providerHeader}>
-                    <Text style={[styles.providerName, { color: textColor }]}>RESULTADO GOOGLE</Text>
-                    {googleRes?.status === 'success' ? (
-                      <View style={styles.successTag}>
-                        <CheckCircle2 color="#10b981" size={12} />
-                        <Text style={styles.successTagText}>Concluído</Text>
-                      </View>
-                    ) : (
-                      <View style={styles.failTag}>
-                        <ShieldAlert color="#f43f5e" size={12} />
-                        <Text style={styles.failTagText}>Falhou</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {googleRes?.status === 'success' && googleRes.image ? (
-                    <Image source={{ uri: googleRes.image }} style={styles.resultImage} resizeMode="contain" />
-                  ) : (
-                    <View style={styles.failedBox}>
-                      <AlertCircle color="#f43f5e" size={24} />
-                      <Text style={styles.failedTitle}>
-                        {googleRes?.errorCode || 'GOOGLE_PROVIDER_ERROR'}
-                      </Text>
-                      <Text style={styles.failedText}>
-                        {googleRes?.errorMessage || 'Não foi possível gerar com o Google Gemini neste momento.'}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-            ) : (
-              /* SINGLE PROVIDER RESULT DISPLAY */
-              <View style={styles.resultsStack}>
-                {perfectCorpRes && (
-                  <View style={[styles.providerResultCard, { backgroundColor: innerBg, borderColor }]}>
-                    <Text style={[styles.providerName, { color: textColor, marginBottom: 8 }]}>
-                      RESULTADO PERFECT CORP
-                    </Text>
-                    {perfectCorpRes.status === 'success' && perfectCorpRes.image ? (
-                      <Image source={{ uri: perfectCorpRes.image }} style={styles.resultImage} resizeMode="contain" />
-                    ) : (
-                      <View style={styles.failedBox}>
-                        <AlertCircle color="#f43f5e" size={24} />
-                        <Text style={styles.failedTitle}>{perfectCorpRes.errorCode}</Text>
-                        <Text style={styles.failedText}>{perfectCorpRes.errorMessage}</Text>
-                      </View>
-                    )}
-                  </View>
-                )}
-
-                {googleRes && (
-                  <View style={[styles.providerResultCard, { backgroundColor: innerBg, borderColor }]}>
-                    <Text style={[styles.providerName, { color: textColor, marginBottom: 8 }]}>
-                      RESULTADO GOOGLE
-                    </Text>
-                    {googleRes.status === 'success' && googleRes.image ? (
-                      <Image source={{ uri: googleRes.image }} style={styles.resultImage} resizeMode="contain" />
-                    ) : (
-                      <View style={styles.failedBox}>
-                        <AlertCircle color="#f43f5e" size={24} />
-                        <Text style={styles.failedTitle}>{googleRes.errorCode}</Text>
-                        <Text style={styles.failedText}>{googleRes.errorMessage}</Text>
-                      </View>
-                    )}
-                  </View>
-                )}
-              </View>
-            )}
-          </ScrollView>
-
-          {/* Action Buttons */}
-          <View style={styles.actions}>
+            {/* Primary Navigation Actions */}
             <TouchableOpacity
+              style={styles.primaryAction}
+              onPress={onPickAnotherGarment}
               activeOpacity={0.85}
-              onPress={onTryAnother}
-              style={[styles.actionBtn, { backgroundColor: '#3b82f6' }]}
             >
-              <ShoppingBag color="#ffffff" size={16} />
-              <Text style={styles.actionBtnText}>Escolher Outra Peça do Catálogo</Text>
+              <RefreshCw size={15} color={colors.textInverse} />
+              <Text style={styles.primaryActionText}>{t('tryAnotherGarment')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
+              style={styles.secondaryAction}
+              onPress={onChangePhoto}
               activeOpacity={0.85}
-              onPress={onClose}
-              style={[styles.closeBtn, { backgroundColor: isDark ? '#334155' : '#e2e8f0' }]}
             >
-              <Text style={[styles.closeBtnText, { color: textColor }]}>Fechar</Text>
+              <Camera size={15} color={colors.textPrimary} />
+              <Text style={styles.secondaryActionText}>{t('changeMyPhoto')}</Text>
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </SafeAreaView>
     </Modal>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  overlay: {
+  safeArea: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.82)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 16,
+    backgroundColor: colors.background,
   },
-  card: {
-    width: '100%',
-    maxWidth: 440,
-    maxHeight: '90%',
-    borderRadius: 24,
-    borderWidth: 1,
-    padding: 20,
-    gap: 12,
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+    justifyContent: 'space-between',
   },
   header: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
-  titleRow: {
+  headerTitleGroup: {
+    flex: 1,
+    marginRight: spacing.md,
+  },
+  badgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 4,
+    marginBottom: 2,
   },
-  sparkleBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#3b82f6',
+  badgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.accent,
+    letterSpacing: 1.2,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  productName: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  closeButton: {
+    width: 34,
+    height: 34,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  title: {
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  subtitle: {
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  closeIconBtn: {
-    padding: 4,
-  },
-  scrollArea: {
-    maxHeight: 460,
-  },
-  scrollContent: {
-    gap: 12,
-    paddingVertical: 4,
-  },
-  errorBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  errorTextCol: {
+  imageCard: {
     flex: 1,
-  },
-  errorTitle: {
-    color: '#f43f5e',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  errorText: {
-    color: '#94a3b8',
-    fontSize: 11,
-    lineHeight: 15,
-  },
-  productBadge: {
-    padding: 10,
-    borderRadius: 14,
+    margin: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
     borderWidth: 1,
-    flexDirection: 'row',
+    borderColor: colors.borderLight,
+    overflow: 'hidden',
+    position: 'relative',
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 6,
-  },
-  productBadgeLabel: {
-    fontSize: 10,
-    fontWeight: '900',
-  },
-  productBadgeName: {
-    fontSize: 12,
-    fontWeight: '800',
-    flex: 1,
-  },
-  resultsStack: {
-    gap: 12,
-  },
-  providerResultCard: {
-    padding: 12,
-    borderRadius: 18,
-    borderWidth: 1,
-    gap: 10,
-  },
-  providerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  providerName: {
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  successTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-  },
-  successTagText: {
-    color: '#10b981',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  failTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(244, 63, 94, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-  },
-  failTagText: {
-    color: '#f43f5e',
-    fontSize: 10,
-    fontWeight: '800',
+    ...shadows.card,
   },
   resultImage: {
     width: '100%',
-    height: 300,
-    borderRadius: 14,
+    height: '100%',
   },
-  failedBox: {
-    padding: 16,
-    borderRadius: 14,
-    backgroundColor: 'rgba(244, 63, 94, 0.08)',
-    alignItems: 'center',
-    gap: 6,
+  providerTag: {
+    position: 'absolute',
+    bottom: spacing.md,
+    right: spacing.md,
+    backgroundColor: colors.surfaceGlass,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 4,
+    borderRadius: borderRadius.full,
   },
-  failedTitle: {
-    color: '#f43f5e',
-    fontSize: 12,
-    fontWeight: '800',
+  providerTagText: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: colors.accent,
+    letterSpacing: 0.8,
   },
-  failedText: {
-    color: '#94a3b8',
-    fontSize: 11,
-    textAlign: 'center',
-    lineHeight: 16,
+  footer: {
+    padding: spacing.md,
+    paddingBottom: spacing.lg,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    gap: spacing.sm,
   },
-  actions: {
-    gap: 8,
-    marginTop: 4,
+  utilityRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: 2,
   },
-  actionBtn: {
+  utilityButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 14,
-    gap: 8,
-  },
-  actionBtnText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  closeBtn: {
+    gap: spacing.xs,
     paddingVertical: 10,
-    borderRadius: 14,
-    alignItems: 'center',
+    backgroundColor: colors.surfaceLight,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
   },
-  closeBtnText: {
+  utilityText: {
     fontSize: 12,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  primaryAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.accent,
+    paddingVertical: 13,
+    borderRadius: borderRadius.md,
+    ...shadows.card,
+  },
+  primaryActionText: {
+    fontSize: 13,
     fontWeight: '700',
+    color: colors.textInverse,
+    letterSpacing: 0.5,
+  },
+  secondaryAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    paddingVertical: 12,
+    borderRadius: borderRadius.md,
+  },
+  secondaryActionText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textPrimary,
   },
 });

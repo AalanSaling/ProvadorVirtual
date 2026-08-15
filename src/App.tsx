@@ -1,7 +1,18 @@
 // src/App.tsx
 import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { I18nProvider } from './i18n';
+import { CatalogProvider } from './context/CatalogContext';
 import { TabNavigator } from './navigation/TabNavigator';
 
 export default function App() {
-  return <TabNavigator />;
+  return (
+    <I18nProvider>
+      <CatalogProvider>
+        <NavigationContainer>
+          <TabNavigator />
+        </NavigationContainer>
+      </CatalogProvider>
+    </I18nProvider>
+  );
 }

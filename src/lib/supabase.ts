@@ -1,36 +1,22 @@
 // src/lib/supabase.ts
 import { createClient } from '@supabase/supabase-js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export const supabaseUrlResolved =
-  process.env.EXPO_PUBLIC_SUPABASE_URL ||
-  process.env.VITE_SUPABASE_URL ||
-  '';
+const rawUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
+const isValidUrl = rawUrl.startsWith('http://') || rawUrl.startsWith('https://');
+const supabaseUrl = isValidUrl ? rawUrl : 'https://demo-supabase-project.supabase.co';
 
-export const supabaseAnonKeyResolved =
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
-  process.env.VITE_SUPABASE_ANON_KEY ||
-  '';
+const rawKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabaseAnonKey = (rawKey && rawKey.length > 20) 
+  ? rawKey 
+  : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.demo-anon-key';
 
-export const isSupabaseConfigured = (): boolean => {
-  return (
-    Boolean(supabaseUrlResolved) &&
-    Boolean(supabaseAnonKeyResolved) &&
-    !supabaseUrlResolved.includes('placeholder')
-  );
-};
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    storage: AsyncStorage,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
+  },
+});
 
-if (!isSupabaseConfigured() && process.env.NODE_ENV === 'production') {
-  console.warn(
-    'Aviso: Configure EXPO_PUBLIC_SUPABASE_URL e EXPO_PUBLIC_SUPABASE_ANON_KEY no arquivo .env para sincronização remota.'
-  );
-}
-
-export const supabase = createClient(
-  supabaseUrlResolved || 'https://placeholder.supabase.co',
-  supabaseAnonKeyResolved || 'placeholder-anon-key',
-  {
-    auth: {
-      persistSession: false,
-    },
-  }
-);

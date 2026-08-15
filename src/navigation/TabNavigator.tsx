@@ -1,155 +1,92 @@
 // src/navigation/TabNavigator.tsx
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, StatusBar } from 'react-native';
-import { ProvadorScreen } from '../screens/ProvadorScreen';
+import React from 'react';
+import { View, StyleSheet, Platform } from 'react-native';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Sparkles, ShoppingBag, Sliders } from 'lucide-react-native';
+import { TryOnScreen } from '../screens/TryOnScreen';
 import { CatalogScreen } from '../screens/CatalogScreen';
-import { SettingsScreen } from '../screens/SettingsScreen';
-import { ClothingItem, TabType } from '../types';
-import { getStoredCatalog } from '../lib/storage';
-import { Sparkles, ShoppingBag, Settings } from 'lucide-react-native';
+import { AdminScreen } from '../screens/AdminScreen';
+import { colors, borderRadius } from '../theme';
+import { useI18n } from '../i18n';
 
-export const TabNavigator: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<TabType>('provador');
-  const [isDark, setIsDark] = useState<boolean>(true);
-  const [catalog, setCatalog] = useState<ClothingItem[]>([]);
-  const [selectedGarment, setSelectedGarment] = useState<ClothingItem | null>(null);
+const Tab = createBottomTabNavigator();
 
-  const loadCatalog = async () => {
-    const items = await getStoredCatalog();
-    setCatalog(items);
-    if (items.length > 0 && !selectedGarment) {
-      setSelectedGarment(items[0]);
-    }
-  };
-
-  useEffect(() => {
-    loadCatalog();
-  }, []);
-
-  const bg = isDark ? '#0f172a' : '#f8fafc';
-  const tabBarBg = isDark ? '#1e293b' : '#ffffff';
-  const borderCol = isDark ? '#334155' : '#e2e8f0';
-  const textColor = isDark ? '#f8fafc' : '#0f172a';
+export function TabNavigator() {
+  const { t } = useI18n();
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: bg }]}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-
-      {/* Main Screen View */}
-      <View style={styles.contentContainer}>
-        {activeTab === 'provador' && (
-          <ProvadorScreen
-            catalog={catalog}
-            isDark={isDark}
-            onNavigateToCatalog={() => setActiveTab('catalog')}
-          />
-        )}
-
-        {activeTab === 'catalog' && (
-          <CatalogScreen
-            catalog={catalog}
-            selectedItem={selectedGarment}
-            onSelectGarment={(item) => setSelectedGarment(item)}
-            onRefreshCatalog={loadCatalog}
-            onGoToProvador={() => setActiveTab('provador')}
-            isDark={isDark}
-          />
-        )}
-
-        {activeTab === 'settings' && (
-          <SettingsScreen
-            isDark={isDark}
-            onToggleTheme={() => setIsDark(!isDark)}
-          />
-        )}
-      </View>
-
-      {/* React Native Bottom Tab Bar */}
-      <View style={[styles.tabBar, { backgroundColor: tabBarBg, borderColor: borderCol }]}>
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={() => setActiveTab('provador')}
-          style={styles.tabItem}
-        >
-          <Sparkles color={activeTab === 'provador' ? '#3b82f6' : '#94a3b8'} size={20} />
-          <Text
-            style={[
-              styles.tabLabel,
-              { color: activeTab === 'provador' ? '#3b82f6' : '#94a3b8' },
-            ]}
-          >
-            Provador
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={() => setActiveTab('catalog')}
-          style={styles.tabItem}
-        >
-          <ShoppingBag color={activeTab === 'catalog' ? '#3b82f6' : '#94a3b8'} size={20} />
-          <Text
-            style={[
-              styles.tabLabel,
-              { color: activeTab === 'catalog' ? '#3b82f6' : '#94a3b8' },
-            ]}
-          >
-            Catálogo
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={() => setActiveTab('settings')}
-          style={styles.tabItem}
-        >
-          <Settings color={activeTab === 'settings' ? '#3b82f6' : '#94a3b8'} size={20} />
-          <Text
-            style={[
-              styles.tabLabel,
-              { color: activeTab === 'settings' ? '#3b82f6' : '#94a3b8' },
-            ]}
-          >
-            Ajustes
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+    <Tab.Navigator
+      id="main-tab-navigator"
+      initialRouteName="TryOn"
+      screenOptions={{
+        headerShown: false,
+        tabBarStyle: {
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
+          borderTopWidth: 1,
+          height: Platform.OS === 'ios' ? 84 : 64,
+          paddingTop: 6,
+          paddingBottom: Platform.OS === 'ios' ? 22 : 8,
+        },
+        tabBarActiveTintColor: colors.accent,
+        tabBarInactiveTintColor: colors.textTertiary,
+        tabBarLabelStyle: {
+          fontSize: 10,
+          fontWeight: '700',
+          letterSpacing: 0.8,
+          marginTop: 2,
+        },
+      }}
+    >
+      <Tab.Screen
+        name="TryOn"
+        component={TryOnScreen}
+        options={{
+          title: t('tryOnTab'),
+          tabBarIcon: ({ color, focused }) => (
+            <View style={[styles.iconWrapper, focused && styles.iconWrapperActive]}>
+              <Sparkles size={17} color={color} />
+            </View>
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Catalog"
+        component={CatalogScreen}
+        options={{
+          title: t('catalogTab'),
+          tabBarIcon: ({ color, focused }) => (
+            <View style={[styles.iconWrapper, focused && styles.iconWrapperActive]}>
+              <ShoppingBag size={17} color={color} />
+            </View>
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Admin"
+        component={AdminScreen}
+        options={{
+          title: t('adminTab'),
+          tabBarIcon: ({ color, focused }) => (
+            <View style={[styles.iconWrapper, focused && styles.iconWrapperActive]}>
+              <Sliders size={17} color={color} />
+            </View>
+          ),
+        }}
+      />
+    </Tab.Navigator>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
-  contentContainer: {
-    flex: 1,
-  },
-  tabBar: {
-    flexDirection: 'row',
-    height: 64,
-    borderTopWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  tabItem: {
-    flex: 1,
+  iconWrapper: {
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
+    borderRadius: borderRadius.md,
   },
-  tabLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    marginTop: 3,
+  iconWrapperActive: {
+    backgroundColor: colors.surfaceLight,
   },
 });

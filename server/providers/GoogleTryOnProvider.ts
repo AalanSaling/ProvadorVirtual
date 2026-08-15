@@ -1,13 +1,22 @@
 // server/providers/GoogleTryOnProvider.ts
 import { GoogleGenAI } from '@google/genai';
-import {
-  TryOnProvider,
-  TryOnInput,
-  ProviderResult,
-} from './types';
+import { ITryOnProvider } from './interfaces/ITryOnProvider.js';
+import { ProviderCapabilities, TryOnInput, TryOnResult } from '../types/index.js';
 
-export class GoogleTryOnProvider implements TryOnProvider {
-  readonly providerName = 'google' as const;
+export class GoogleTryOnProvider implements ITryOnProvider {
+  readonly id = 'google';
+  readonly name = 'Google Gemini AI';
+  readonly capabilities: ProviderCapabilities = {
+    upperBody: true,
+    lowerBody: true,
+    fullBody: true,
+    shoes: true,
+  };
+
+  public async validateConfiguration(): Promise<boolean> {
+    const key = this.getApiKey();
+    return Boolean(key);
+  }
 
   /**
    * Model configuration isolated in constant/env variable so model name can be changed
@@ -58,7 +67,7 @@ export class GoogleTryOnProvider implements TryOnProvider {
     throw new Error(`${labelName}: Imagem fornecida deve ser Data URI base64 ou URL HTTP(S).`);
   }
 
-  async generateTryOn(input: TryOnInput): Promise<ProviderResult> {
+  async generateTryOn(input: TryOnInput): Promise<TryOnResult> {
     const startTime = Date.now();
     const apiKey = this.getApiKey();
 
@@ -66,9 +75,9 @@ export class GoogleTryOnProvider implements TryOnProvider {
       return {
         provider: 'google',
         status: 'failed',
-        image: null,
-        taskId: null,
-        latencyMs: Date.now() - startTime,
+        resultImage: null,
+        providerTaskId: null,
+        durationMs: Date.now() - startTime,
         errorCode: 'GOOGLE_AUTH_ERROR',
         errorMessage: 'Chave de API do Google Gemini (GOOGLE_API_KEY) não configurada nos segredos do servidor.',
       };
@@ -158,9 +167,9 @@ INSTRUÇÕES OBRIGATÓRIAS:
         return {
           provider: 'google',
           status: 'failed',
-          image: null,
-          taskId: null,
-          latencyMs: Date.now() - startTime,
+          resultImage: null,
+          providerTaskId: null,
+          durationMs: Date.now() - startTime,
           errorCode: 'GOOGLE_PROVIDER_ERROR',
           errorMessage: `O modelo do Google gerou texto em vez de uma imagem de provador. Resposta do modelo: "${textOutput.slice(0, 200)}"`,
         };
@@ -169,14 +178,14 @@ INSTRUÇÕES OBRIGATÓRIAS:
       return {
         provider: 'google',
         status: 'success',
-        image: generatedImageBase64,
-        taskId: null,
-        latencyMs: Date.now() - startTime,
+        resultImage: generatedImageBase64,
+        providerTaskId: null,
+        durationMs: Date.now() - startTime,
         errorCode: null,
         errorMessage: null,
       };
     } catch (err: any) {
-      const latencyMs = Date.now() - startTime;
+      const durationMs = Date.now() - startTime;
       const errString = String(err?.message || err);
 
       // Handle Quota and Rate Limits explicitly
@@ -188,9 +197,9 @@ INSTRUÇÕES OBRIGATÓRIAS:
         return {
           provider: 'google',
           status: 'failed',
-          image: null,
-          taskId: null,
-          latencyMs,
+          resultImage: null,
+          providerTaskId: null,
+          durationMs,
           errorCode: 'GOOGLE_RATE_LIMITED',
           errorMessage: 'O serviço do Google Gemini atingiu o limite de requisições por minuto (429 Rate Limit). Tente novamente em instantes.',
         };
@@ -204,9 +213,9 @@ INSTRUÇÕES OBRIGATÓRIAS:
         return {
           provider: 'google',
           status: 'failed',
-          image: null,
-          taskId: null,
-          latencyMs,
+          resultImage: null,
+          providerTaskId: null,
+          durationMs,
           errorCode: 'GOOGLE_QUOTA_EXCEEDED',
           errorMessage: 'Cota de uso da API do Google Gemini excedida para o projeto/chave atual.',
         };
@@ -221,9 +230,9 @@ INSTRUÇÕES OBRIGATÓRIAS:
         return {
           provider: 'google',
           status: 'failed',
-          image: null,
-          taskId: null,
-          latencyMs,
+          resultImage: null,
+          providerTaskId: null,
+          durationMs,
           errorCode: 'GOOGLE_AUTH_ERROR',
           errorMessage: 'Chave do Google Gemini inválida ou sem permissão para o modelo de geração de imagem.',
         };
@@ -237,9 +246,9 @@ INSTRUÇÕES OBRIGATÓRIAS:
         return {
           provider: 'google',
           status: 'failed',
-          image: null,
-          taskId: null,
-          latencyMs,
+          resultImage: null,
+          providerTaskId: null,
+          durationMs,
           errorCode: 'GOOGLE_MODEL_UNAVAILABLE',
           errorMessage: `O modelo de imagem configurado ("${modelName}") está temporariamente indisponível.`,
         };
@@ -248,9 +257,9 @@ INSTRUÇÕES OBRIGATÓRIAS:
       return {
         provider: 'google',
         status: 'error',
-        image: null,
-        taskId: null,
-        latencyMs,
+        resultImage: null,
+        providerTaskId: null,
+        durationMs,
         errorCode: 'GOOGLE_PROVIDER_ERROR',
         errorMessage: `Erro de processamento no Google Gemini: ${errString.slice(0, 300)}`,
       };

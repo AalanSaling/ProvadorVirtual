@@ -1,431 +1,519 @@
 // src/screens/CatalogScreen.tsx
-import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
-import { ClothingItem, Store, StoreRole } from '../types';
-import { CatalogCard } from '../components/CatalogCard';
-import { ProductFormModal } from '../components/ProductFormModal';
-import { categories } from '../data/catalog';
-import { createProduct, updateProduct, deleteProduct, getUserStores } from '../lib/products';
-import { Search, Plus, ShoppingBag, Store as StoreIcon } from 'lucide-react-native';
+import React, { useState, useMemo } from 'react';
+import {
+  View,
+  Text,
+  FlatList,
+  Image,
+  StyleSheet,
+  TouchableOpacity,
+  TextInput,
+  SafeAreaView,
+  ScrollView,
+  Alert,
+} from 'react-native';
+import { Search, Sparkles, Tag, Plus, Edit2, Trash2, CheckCircle2 } from 'lucide-react-native';
+import { colors, spacing, borderRadius, shadows, formatCurrency } from '../theme';
+import { useI18n } from '../i18n';
+import { Header } from '../components/Header';
+import { ProductDetailModal } from '../components/ProductDetailModal';
+import { AdminProductModal } from '../components/AdminProductModal';
+import { EmptyState } from '../components/EmptyState';
+import { Product, GarmentCategory } from '../types';
+import { useCatalog } from '../context/CatalogContext';
 
-interface CatalogScreenProps {
-  catalog: ClothingItem[];
-  selectedItem: ClothingItem | null;
-  onSelectGarment: (item: ClothingItem) => void;
-  onRefreshCatalog: () => void;
-  onGoToProvador: () => void;
-  isDark?: boolean;
-}
+export function CatalogScreen({ navigation }: any) {
+  const { t } = useI18n();
+  const {
+    products,
+    userRole,
+    addProduct,
+    editProduct,
+    deleteProduct,
+    setSelectedTryOnProduct,
+  } = useCatalog();
 
-export const CatalogScreen: React.FC<CatalogScreenProps> = ({
-  catalog,
-  selectedItem,
-  onSelectGarment,
-  onRefreshCatalog,
-  onGoToProvador,
-  isDark = true,
-}) => {
-  const [selectedCategory, setSelectedCategory] = useState<string>('Todos');
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [showProductModal, setShowProductModal] = useState<boolean>(false);
-  const [editingProduct, setEditingProduct] = useState<ClothingItem | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [detailProduct, setDetailProduct] = useState<Product | null>(null);
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [editProductModalVisible, setEditProductModalVisible] = useState(false);
+  const [productToEdit, setProductToEdit] = useState<Product | null>(null);
 
-  // Multi-Store and Auth State
-  const [userStores, setUserStores] = useState<{ store: Store; role: StoreRole }[]>([]);
-  const [activeStore, setActiveStore] = useState<Store | null>(null);
-  const [userRole, setUserRole] = useState<StoreRole | null>('owner');
+  const isStoreAdmin = userRole === 'owner' || userRole === 'manager';
 
-  useEffect(() => {
-    (async () => {
-      const stores = await getUserStores();
-      setUserStores(stores);
-      if (stores.length > 0) {
-        setActiveStore(stores[0].store);
-        setUserRole(stores[0].role);
+  const categoryChips = [
+    { id: 'all', label: t('allCategories') },
+    { id: 'full_body', label: t('catFullBody') },
+    { id: 'upper_body', label: t('catUpperBody') },
+    { id: 'lower_body', label: t('catLowerBody') },
+    { id: 'shoes', label: t('catShoes') },
+  ];
+
+  function getCategoryLabel(category: GarmentCategory): string {
+    switch (category) {
+      case 'full_body':
+        return t('catFullBody');
+      case 'upper_body':
+        return t('catUpperBody');
+      case 'lower_body':
+        return t('catLowerBody');
+      case 'shoes':
+        return t('catShoes');
+      default:
+        return t('allCategories');
+    }
+  }
+
+  const filteredProducts = useMemo(() => {
+    return products.filter(product => {
+      // In customer mode, hide inactive products
+      if (!isStoreAdmin && product.active === false) {
+        return false;
       }
-    })();
-  }, []);
 
-  const filteredCatalog = catalog.filter((item) => {
-    const matchesCategory = selectedCategory === 'Todos' || item.category === selectedCategory;
-    const matchesSearch =
-      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.description.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
-  });
+      const matchesCategory =
+        selectedCategory === 'all' || product.category === selectedCategory;
 
-  const handleOpenAddModal = () => {
-    if (userRole !== 'owner' && userRole !== 'manager') {
-      alert('Apenas administradores da loja (Owner ou Manager) podem adicionar peças.');
-      return;
+      const q = searchQuery.toLowerCase().trim();
+      const matchesSearch =
+        !q ||
+        product.name.toLowerCase().includes(q) ||
+        (product.description && product.description.toLowerCase().includes(q)) ||
+        (product.color && product.color.toLowerCase().includes(q)) ||
+        (product.material && product.material.toLowerCase().includes(q));
+
+      return matchesCategory && matchesSearch;
+    });
+  }, [products, selectedCategory, searchQuery, isStoreAdmin]);
+
+  function handleOpenDetails(product: Product) {
+    setDetailProduct(product);
+    setDetailModalVisible(true);
+  }
+
+  function handleSelectForTryOn(product: Product) {
+    setSelectedTryOnProduct(product);
+    if (navigation && navigation.navigate) {
+      navigation.navigate('TryOn');
     }
-    setEditingProduct(null);
-    setShowProductModal(true);
-  };
+  }
 
-  const handleOpenEditModal = (item: ClothingItem) => {
-    if (userRole !== 'owner' && userRole !== 'manager') {
-      alert('Apenas administradores da loja podem editar peças.');
-      return;
+  function handleAddNew() {
+    setProductToEdit(null);
+    setEditProductModalVisible(true);
+  }
+
+  function handleEdit(product: Product) {
+    setProductToEdit(product);
+    setEditProductModalVisible(true);
+  }
+
+  function handleDelete(productId?: string) {
+    if (!productId) return;
+    Alert.alert(t('deletePieceConfirmTitle'), t('deletePieceConfirmMsg'), [
+      { text: t('cancel'), style: 'cancel' },
+      {
+        text: t('deleteBtn'),
+        style: 'destructive',
+        onPress: () => {
+          deleteProduct(productId);
+          Alert.alert(t('success'), t('deleteSuccessMsg'));
+        },
+      },
+    ]);
+  }
+
+  function handleSaveProduct(productData: Partial<Product>) {
+    if (productData.id) {
+      editProduct(productData.id, productData);
+    } else {
+      addProduct(productData);
     }
-    setEditingProduct(item);
-    setShowProductModal(true);
-  };
-
-  const handleDeleteItem = async (item: ClothingItem) => {
-    if (userRole !== 'owner') {
-      alert('Apenas o Proprietário (Owner) da loja pode excluir produtos do catálogo.');
-      return;
-    }
-
-    if (confirm(`Deseja realmente remover "${item.name}" do catálogo?`)) {
-      try {
-        await deleteProduct(item.id, activeStore?.id || item.store_id || 'demo-store-001');
-        alert('Produto removido com sucesso!');
-        onRefreshCatalog();
-      } catch (e: any) {
-        alert(`Erro ao excluir: ${e.message}`);
-      }
-    }
-  };
-
-  const handleSaveProductFromModal = async (
-    productToSave: ClothingItem,
-    catalogBase64?: string,
-    tryOnBase64?: string
-  ) => {
-    setShowProductModal(false);
-    try {
-      if (editingProduct) {
-        await updateProduct(
-          {
-            id: productToSave.id,
-            store_id: activeStore?.id || productToSave.store_id || 'demo-store-001',
-            name: productToSave.name,
-            description: productToSave.description,
-            category: productToSave.category,
-            garment_type: productToSave.garment_type,
-            color: productToSave.color,
-            material: productToSave.material,
-            fit: productToSave.fit,
-            price: productToSave.price,
-            currency: productToSave.currency || 'BRL',
-            sizes: productToSave.sizes,
-            stock: productToSave.stock,
-            active: productToSave.active,
-            image_url: productToSave.image,
-            try_on_reference_url: productToSave.try_on_reference_image,
-          },
-          catalogBase64,
-          tryOnBase64
-        );
-        alert('Produto atualizado no catálogo da loja!');
-      } else {
-        await createProduct(
-          {
-            store_id: activeStore?.id || 'demo-store-001',
-            name: productToSave.name,
-            description: productToSave.description,
-            category: productToSave.category,
-            garment_type: productToSave.garment_type,
-            color: productToSave.color,
-            material: productToSave.material,
-            fit: productToSave.fit,
-            price: productToSave.price,
-            currency: productToSave.currency || 'BRL',
-            sizes: productToSave.sizes,
-            stock: productToSave.stock,
-            active: productToSave.active,
-            image_url: productToSave.image,
-            try_on_reference_url: productToSave.try_on_reference_image,
-          },
-          catalogBase64,
-          tryOnBase64
-        );
-        alert('Novo produto adicionado com sucesso ao catálogo!');
-      }
-      onRefreshCatalog();
-    } catch (e: any) {
-      alert(`Erro: ${e.message}`);
-    }
-  };
-
-  const cardBg = isDark ? '#1e293b' : '#ffffff';
-  const textColor = isDark ? '#f8fafc' : '#0f172a';
-  const subTextColor = isDark ? '#94a3b8' : '#64748b';
-  const borderColor = isDark ? '#334155' : '#e2e8f0';
-  const inputBg = isDark ? '#0f172a' : '#f1f5f9';
+    Alert.alert(t('success'), t('productSavedSuccess'));
+  }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-      {/* Active Store Indicator */}
-      {activeStore && (
-        <View style={[styles.storeBar, { backgroundColor: cardBg, borderColor }]}>
-          <View style={styles.storeBarLeft}>
-            <StoreIcon color="#3b82f6" size={18} />
-            <View>
-              <Text style={[styles.storeName, { color: textColor }]}>{activeStore.name}</Text>
-              <Text style={[styles.storeRole, { color: subTextColor }]}>
-                Papel na loja: <Text style={styles.bold}>{userRole?.toUpperCase() || 'CONSUMIDOR'}</Text>
-              </Text>
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        <Header />
+
+        {/* Search & Actions Bar */}
+        <View style={styles.searchSection}>
+          <View style={styles.searchRow}>
+            <View style={styles.searchBar}>
+              <Search size={16} color={colors.textTertiary} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder={t('searchPlaceholder')}
+                placeholderTextColor={colors.textTertiary}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
             </View>
+
+            {isStoreAdmin && (
+              <TouchableOpacity
+                style={styles.addPieceBtn}
+                onPress={handleAddNew}
+                activeOpacity={0.85}
+              >
+                <Plus size={16} color={colors.textInverse} />
+                <Text style={styles.addPieceBtnText}>{t('addNewPiece')}</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
-          {userStores.length > 1 && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.storeSwitcher}>
-              {userStores.map((item) => (
-                <React.Fragment key={item.store.id}>
-                  <TouchableOpacity
-                    onPress={() => {
-                      setActiveStore(item.store);
-                      setUserRole(item.role);
-                    }}
-                    style={[
-                      styles.storeChip,
-                      { backgroundColor: activeStore.id === item.store.id ? '#3b82f6' : inputBg },
-                    ]}
-                  >
-                    <Text style={[styles.storeChipText, { color: activeStore.id === item.store.id ? '#ffffff' : textColor }]}>
-                      {item.store.name}
-                    </Text>
-                  </TouchableOpacity>
-                </React.Fragment>
-              ))}
-            </ScrollView>
-          )}
-        </View>
-      )}
-
-      {/* Header & Controls */}
-      <View style={[styles.headerCard, { backgroundColor: cardBg, borderColor }]}>
-        <View style={styles.topRow}>
-          <View>
-            <Text style={styles.badgeLabel}>GESTÃO DE CATÁLOGO MULTI-LOJA</Text>
-            <Text style={[styles.title, { color: textColor }]}>Roupas & Produtos</Text>
-          </View>
-          {(userRole === 'owner' || userRole === 'manager') && (
-            <TouchableOpacity onPress={handleOpenAddModal} style={styles.addBtn}>
-              <Plus color="#ffffff" size={16} />
-              <Text style={styles.addBtnText}>Nova Peça</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Search */}
-        <View style={[styles.searchBox, { backgroundColor: inputBg }]}>
-          <Search color={subTextColor} size={16} />
-          <TextInput
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Buscar por nome, cor ou estilo..."
-            placeholderTextColor={subTextColor}
-            style={[styles.searchInput, { color: textColor }]}
-          />
-        </View>
-
-        {/* Categories */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll}>
-          {categories.map((cat) => {
-            const isSel = selectedCategory === cat;
-            return (
-              <React.Fragment key={cat}>
-                <TouchableOpacity
-                  onPress={() => setSelectedCategory(cat)}
+          {/* Horizontal Category Chips */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoryScroll}
+          >
+            {categoryChips.map(chip => (
+              <TouchableOpacity
+                key={chip.id}
+                style={[
+                  styles.categoryChip,
+                  selectedCategory === chip.id && styles.categoryChipActive,
+                ]}
+                onPress={() => setSelectedCategory(chip.id)}
+                activeOpacity={0.7}
+              >
+                <Text
                   style={[
-                    styles.catPill,
-                    {
-                      backgroundColor: isSel ? '#3b82f6' : isDark ? '#0f172a' : '#f1f5f9',
-                    },
+                    styles.categoryChipText,
+                    selectedCategory === chip.id && styles.categoryChipTextActive,
                   ]}
                 >
-                  <Text style={[styles.catPillText, { color: isSel ? '#ffffff' : subTextColor }]}>
-                    {cat}
+                  {chip.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* Product List */}
+        <FlatList
+          data={filteredProducts}
+          keyExtractor={item => item.id || item.name}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <EmptyState
+              icon={Tag}
+              title={t('noSearchResultsTitle')}
+              description={t('noSearchResultsDesc')}
+            />
+          }
+          renderItem={({ item }) => {
+            const photoUrl =
+              item.photos?.find(p => p.type === 'catalog')?.storagePath ||
+              'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=600&q=80';
+
+            return (
+              <TouchableOpacity
+                style={styles.productCard}
+                onPress={() => handleOpenDetails(item)}
+                activeOpacity={0.85}
+              >
+                <Image source={{ uri: photoUrl }} style={styles.productImage} resizeMode="cover" />
+
+                <View style={styles.productInfo}>
+                  <View style={styles.productHeaderRow}>
+                    <View style={styles.categoryBadge}>
+                      <Text style={styles.categoryBadgeText}>
+                        {getCategoryLabel(item.category)}
+                      </Text>
+                    </View>
+
+                    <View style={styles.rightBadgeContainer}>
+                      {item.active === false && isStoreAdmin && (
+                        <View style={styles.inactiveBadge}>
+                          <Text style={styles.inactiveBadgeText}>{t('statusDisabled')}</Text>
+                        </View>
+                      )}
+                      <View style={styles.stockBadge}>
+                        <CheckCircle2 size={10} color={colors.success} />
+                        <Text style={styles.stockText}>{item.stock || 1} {t('inStock')}</Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  <Text style={styles.productName} numberOfLines={1}>
+                    {item.name}
                   </Text>
-                </TouchableOpacity>
-              </React.Fragment>
+
+                  {item.description ? (
+                    <Text style={styles.productDesc} numberOfLines={2}>
+                      {item.description}
+                    </Text>
+                  ) : null}
+
+                  <View style={styles.productFooterRow}>
+                    <Text style={styles.priceText}>
+                      {formatCurrency(item.price, item.currency)}
+                    </Text>
+
+                    <View style={styles.actionButtonsRow}>
+                      {isStoreAdmin && (
+                        <>
+                          <TouchableOpacity
+                            style={styles.iconActionBtn}
+                            onPress={() => handleEdit(item)}
+                            activeOpacity={0.7}
+                          >
+                            <Edit2 size={14} color={colors.accent} />
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={[styles.iconActionBtn, styles.iconDeleteBtn]}
+                            onPress={() => handleDelete(item.id)}
+                            activeOpacity={0.7}
+                          >
+                            <Trash2 size={14} color={colors.error} />
+                          </TouchableOpacity>
+                        </>
+                      )}
+
+                      <TouchableOpacity
+                        style={styles.tryOnQuickBtn}
+                        onPress={() => handleSelectForTryOn(item)}
+                        activeOpacity={0.8}
+                      >
+                        <Sparkles size={12} color={colors.textInverse} />
+                        <Text style={styles.tryOnQuickBtnText}>{t('tryOnTab')}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              </TouchableOpacity>
             );
-          })}
-        </ScrollView>
+          }}
+        />
+
+        {/* Product Detail Modal */}
+        <ProductDetailModal
+          visible={detailModalVisible}
+          product={detailProduct}
+          canEdit={isStoreAdmin}
+          onClose={() => setDetailModalVisible(false)}
+          onSelectForTryOn={handleSelectForTryOn}
+          onEdit={handleEdit}
+        />
+
+        {/* Add/Edit Product Modal */}
+        <AdminProductModal
+          visible={editProductModalVisible}
+          product={productToEdit}
+          onClose={() => setEditProductModalVisible(false)}
+          onSave={handleSaveProduct}
+          onDelete={handleDelete}
+        />
       </View>
-
-      {/* Grid */}
-      {filteredCatalog.length === 0 ? (
-        <View style={[styles.emptyBox, { backgroundColor: cardBg, borderColor }]}>
-          <ShoppingBag color={subTextColor} size={36} />
-          <Text style={[styles.emptyTitle, { color: textColor }]}>Nenhuma peça encontrada no catálogo</Text>
-          <Text style={[styles.emptyText, { color: subTextColor }]}>
-            Tente buscar outro termo ou selecione outra categoria.
-          </Text>
-        </View>
-      ) : (
-        <View style={styles.gridContainer}>
-          {filteredCatalog.map((item) => (
-            <React.Fragment key={item.id}>
-              <View style={styles.gridItem}>
-                <CatalogCard
-                  item={item}
-                  selected={selectedItem?.id === item.id}
-                  onSelect={() => {
-                    onSelectGarment(item);
-                    onGoToProvador();
-                  }}
-                  onQuickTryOn={() => {
-                    onSelectGarment(item);
-                    onGoToProvador();
-                  }}
-                  onEdit={() => handleOpenEditModal(item)}
-                  onDelete={() => handleDeleteItem(item)}
-                  canEdit={userRole === 'owner' || userRole === 'manager'}
-                  canDelete={userRole === 'owner'}
-                  isDark={isDark}
-                />
-              </View>
-            </React.Fragment>
-          ))}
-        </View>
-      )}
-
-      {/* Product Form Modal */}
-      <ProductFormModal
-        visible={showProductModal}
-        initialProduct={editingProduct}
-        storeId={activeStore?.id || 'demo-store-001'}
-        onSave={handleSaveProductFromModal}
-        onClose={() => setShowProductModal(false)}
-        isDark={isDark}
-      />
-    </ScrollView>
+    </SafeAreaView>
   );
-};
+}
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   container: {
     flex: 1,
+    backgroundColor: colors.background,
   },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 100,
-    gap: 12,
+  searchSection: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+    backgroundColor: colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
-  storeBar: {
-    padding: 12,
-    borderRadius: 20,
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  searchBar: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
     borderWidth: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  storeBarLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  storeName: {
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  storeRole: {
-    fontSize: 10,
-  },
-  bold: {
-    fontWeight: '800',
-    color: '#3b82f6',
-  },
-  storeSwitcher: {
-    flexDirection: 'row',
-  },
-  storeChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    marginLeft: 6,
-  },
-  storeChipText: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  headerCard: {
-    padding: 16,
-    borderRadius: 24,
-    borderWidth: 1,
-    gap: 12,
-  },
-  topRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  badgeLabel: {
-    color: '#3b82f6',
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  addBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#3b82f6',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 14,
-    gap: 6,
-  },
-  addBtnText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  searchBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    gap: 8,
+    borderColor: colors.borderLight,
+    height: 40,
+    gap: spacing.sm,
   },
   searchInput: {
     flex: 1,
-    paddingVertical: 10,
-    fontSize: 12,
+    color: colors.textPrimary,
+    fontSize: 13,
   },
-  catScroll: {
+  addPieceBtn: {
     flexDirection: 'row',
-  },
-  catPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 8,
-  },
-  catPillText: {
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  emptyBox: {
-    padding: 32,
-    borderRadius: 24,
-    borderWidth: 1,
     alignItems: 'center',
-    gap: 8,
+    gap: 4,
+    backgroundColor: colors.accent,
+    paddingHorizontal: spacing.md,
+    height: 40,
+    borderRadius: borderRadius.md,
+    justifyContent: 'center',
   },
-  emptyTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  emptyText: {
+  addPieceBtnText: {
     fontSize: 12,
-    textAlign: 'center',
+    fontWeight: '700',
+    color: colors.textInverse,
   },
-  gridContainer: {
+  categoryScroll: {
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+  },
+  categoryChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  categoryChipActive: {
+    backgroundColor: colors.accentGlow,
+    borderColor: colors.accent,
+  },
+  categoryChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  categoryChipTextActive: {
+    color: colors.accent,
+    fontWeight: '700',
+  },
+  listContent: {
+    padding: spacing.lg,
+    gap: spacing.md,
+    paddingBottom: spacing.xxl,
+  },
+  productCard: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: -6,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    overflow: 'hidden',
+    ...shadows.card,
   },
-  gridItem: {
-    width: '50%',
+  productImage: {
+    width: 115,
+    height: 145,
+    backgroundColor: colors.surfaceLight,
+  },
+  productInfo: {
+    flex: 1,
+    padding: spacing.md,
+    justifyContent: 'space-between',
+  },
+  productHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  categoryBadge: {
     paddingHorizontal: 6,
+    paddingVertical: 2,
+    backgroundColor: colors.surfaceLight,
+    borderRadius: borderRadius.xs,
+  },
+  categoryBadgeText: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: colors.textTertiary,
+    textTransform: 'uppercase',
+  },
+  rightBadgeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  inactiveBadge: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: borderRadius.xs,
+  },
+  inactiveBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.error,
+  },
+  stockBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  stockText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.success,
+  },
+  productName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginTop: 2,
+  },
+  productDesc: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    lineHeight: 15,
+  },
+  productFooterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.xs,
+  },
+  priceText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.accent,
+  },
+  actionButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  iconActionBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconDeleteBtn: {
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  tryOnQuickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.accent,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: borderRadius.full,
+  },
+  tryOnQuickBtnText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.textInverse,
+    letterSpacing: 0.5,
   },
 });
