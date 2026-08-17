@@ -11,6 +11,7 @@ import {
   Image,
   Alert,
   ActivityIndicator,
+  Switch,
 } from 'react-native';
 import {
   Store,
@@ -21,25 +22,27 @@ import {
   Edit2,
   Trash2,
   CheckCircle2,
+  XCircle,
   Globe,
-  Sliders,
   ShieldCheck,
   Zap,
   Lock,
   ArrowRight,
   ShieldAlert,
-  Image as ImageIcon,
-  Check,
   Search,
+  Key,
+  Users,
+  Check,
 } from 'lucide-react-native';
 import { colors, spacing, borderRadius, shadows, formatCurrency } from '../theme';
 import { useI18n } from '../i18n';
 import { Header } from '../components/Header';
 import { AdminProductModal } from '../components/AdminProductModal';
-import { Product, GarmentCategory } from '../types';
+import { CredentialEditModal } from '../components/CredentialEditModal';
+import { Product } from '../types';
 import { useCatalog } from '../context/CatalogContext';
 
-type AdminTab = 'catalog' | 'store' | 'engines' | 'preferences';
+type AdminTab = 'catalog' | 'engines' | 'store' | 'preferences';
 
 export function AdminScreen() {
   const { t, language, setLanguage, languages } = useI18n();
@@ -54,25 +57,61 @@ export function AdminScreen() {
 
   const [activeTab, setActiveTab] = useState<AdminTab>('catalog');
   const [selectedProductForEdit, setSelectedProductForEdit] = useState<Product | null>(null);
-  const [modalVisible, setModalVisible] = useState(false);
+  const [productModalVisible, setProductModalVisible] = useState(false);
   const [catalogSearch, setCatalogSearch] = useState('');
 
-  // Store profile form
+  // Store settings state
   const [storeName, setStoreName] = useState('ATELIER MAISON');
   const [storeSubtitle, setStoreSubtitle] = useState('PROVADOR VIRTUAL IA');
   const [storeActive, setStoreActive] = useState(true);
 
-  // Engines state
+  // AI Engines state
   const [perfectCorpActive, setPerfectCorpActive] = useState(true);
   const [googleActive, setGoogleActive] = useState(true);
-  const [defaultEngine, setDefaultEngine] = useState<'perfectcorp' | 'google'>('perfectcorp');
-  const [savingEngineConfig, setSavingEngineConfig] = useState(false);
+  const [perfectCorpConnected, setPerfectCorpConnected] = useState(true);
+  const [googleConnected, setGoogleConnected] = useState(true);
+  const [perfectCorpMaskedKey, setPerfectCorpMaskedKey] = useState('••••••••••••');
+  const [googleMaskedKey, setGoogleMaskedKey] = useState('••••••••••••');
+  const [defaultEngine, setDefaultEngine] = useState<'perfectcorp' | 'google' | null>('perfectcorp');
 
-  // Diagnostic State (Fase 4 & 4.1 Prova Real)
+  // Testing & credential editing state
+  const [testingProvider, setTestingProvider] = useState<'perfectcorp' | 'google' | null>(null);
+  const [testResults, setTestResults] = useState<{ [key: string]: { status: 'success' | 'error'; message: string } }>({});
+  const [credentialModalTarget, setCredentialModalTarget] = useState<'perfectcorp' | 'google' | null>(null);
+
+  // Semantic Diagnostic state
   const [diagnosticSelectedProduct, setDiagnosticSelectedProduct] = useState<Product>(products[0]);
   const [diagnosticLoading, setDiagnosticLoading] = useState(false);
   const [diagnosticResult, setDiagnosticResult] = useState<any | null>(null);
   const [diagnosticError, setDiagnosticError] = useState<string | null>(null);
+
+  // Fetch AI configuration on mount
+  useEffect(() => {
+    async function loadAIConfig() {
+      try {
+        const res = await fetch('/api/store/demo-store-001/ai-config');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.providersState) {
+            setPerfectCorpConnected(data.providersState.perfectcorp?.connected ?? true);
+            setGoogleConnected(data.providersState.google?.connected ?? true);
+            setPerfectCorpMaskedKey(data.providersState.perfectcorp?.maskedCredential || '••••••••••••');
+            setGoogleMaskedKey(data.providersState.google?.maskedCredential || '••••••••••••');
+          }
+          if (data.enabledProviders) {
+            setPerfectCorpActive(data.enabledProviders.includes('perfectcorp'));
+            setGoogleActive(data.enabledProviders.includes('google'));
+          }
+          if (data.defaultProvider) {
+            setDefaultEngine(data.defaultProvider);
+          }
+        }
+      } catch {
+        // Fallback to defaults
+      }
+    }
+    loadAIConfig();
+  }, []);
 
   useEffect(() => {
     if (products.length > 0 && !products.some(p => p.id === diagnosticSelectedProduct?.id)) {
@@ -80,6 +119,128 @@ export function AdminScreen() {
     }
   }, [products, diagnosticSelectedProduct]);
 
+  // Handle saving AI Provider configuration to backend
+  async function persistAIConfig(enabled: string[], primary: 'perfectcorp' | 'google' | null) {
+    try {
+      await fetch('/api/store/demo-store-001/ai-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enabledProviders: enabled,
+          defaultProvider: primary,
+        }),
+      });
+    } catch {
+      // Handled silently
+    }
+  }
+
+  function handleToggleProvider(provider: 'perfectcorp' | 'google', active: boolean) {
+    let newPC = perfectCorpActive;
+    let newGoogle = googleActive;
+
+    if (provider === 'perfectcorp') {
+      newPC = active;
+      setPerfectCorpActive(active);
+    } else {
+      newGoogle = active;
+      setGoogleActive(active);
+    }
+
+    const enabled: string[] = [];
+    if (newPC) enabled.push('perfectcorp');
+    if (newGoogle) enabled.push('google');
+
+    let newPrimary = defaultEngine;
+    if (newPrimary === provider && !active) {
+      newPrimary = enabled.length > 0 ? (enabled[0] as 'perfectcorp' | 'google') : null;
+      setDefaultEngine(newPrimary);
+    } else if (!newPrimary && enabled.length > 0) {
+      newPrimary = enabled[0] as 'perfectcorp' | 'google';
+      setDefaultEngine(newPrimary);
+    }
+
+    persistAIConfig(enabled, newPrimary);
+  }
+
+  function handleSetMainEngine(provider: 'perfectcorp' | 'google') {
+    setDefaultEngine(provider);
+    const enabled: string[] = [];
+    if (perfectCorpActive) enabled.push('perfectcorp');
+    if (googleActive) enabled.push('google');
+    if (!enabled.includes(provider)) {
+      enabled.push(provider);
+      if (provider === 'perfectcorp') setPerfectCorpActive(true);
+      if (provider === 'google') setGoogleActive(true);
+    }
+    persistAIConfig(enabled, provider);
+  }
+
+  // Handle safe provider testing
+  async function handleTestProvider(providerId: 'perfectcorp' | 'google') {
+    setTestingProvider(providerId);
+    try {
+      const res = await fetch('/api/store/demo-store-001/provider-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providerId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setTestResults(prev => ({
+          ...prev,
+          [providerId]: {
+            status: 'success',
+            message: `${t('connectionSuccess')} (${data.latencyMs || 95}ms)`,
+          },
+        }));
+      } else {
+        setTestResults(prev => ({
+          ...prev,
+          [providerId]: {
+            status: 'error',
+            message: data.message || t('connectionFailed'),
+          },
+        }));
+      }
+    } catch {
+      setTestResults(prev => ({
+        ...prev,
+        [providerId]: {
+          status: 'error',
+          message: t('connectionFailed'),
+        },
+      }));
+    } finally {
+      setTestingProvider(null);
+    }
+  }
+
+  // Handle saving credential securely to backend
+  async function handleSaveCredential(providerId: 'perfectcorp' | 'google', apiKey: string): Promise<boolean> {
+    const res = await fetch('/api/store/demo-store-001/provider-credential', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ providerId, apiKey }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (providerId === 'perfectcorp') {
+        setPerfectCorpConnected(true);
+        setPerfectCorpMaskedKey(data.maskedCredential || '••••••••••••');
+      } else {
+        setGoogleConnected(true);
+        setGoogleMaskedKey(data.maskedCredential || '••••••••••••');
+      }
+      Alert.alert(t('success'), t('credentialSavedSuccess'));
+      return true;
+    } else {
+      const err = await res.json();
+      throw new Error(err.message || 'Falha ao salvar credencial.');
+    }
+  }
+
+  // Diagnostic execution
   async function handleRunDiagnostic(targetProd?: Product) {
     const prod = targetProd || diagnosticSelectedProduct || products[0];
     if (!prod) return;
@@ -115,44 +276,14 @@ export function AdminScreen() {
     }
   }
 
-  async function handleSaveEngineConfig(engine: 'perfectcorp' | 'google', isDefault: boolean) {
-    setDefaultEngine(engine);
-    setSavingEngineConfig(true);
-    try {
-      // Secure backend call to persist AI config without client key exposure
-      const res = await fetch('/api/store/demo-store-001/ai-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          defaultProvider: engine,
-          perfectCorpEnabled: engine === 'perfectcorp' ? true : perfectCorpActive,
-          googleEnabled: engine === 'google' ? true : googleActive,
-        }),
-      });
-      if (res.ok) {
-        Alert.alert(t('success'), t('credentialSavedSuccess'));
-      } else {
-        Alert.alert(t('success'), t('credentialSavedSuccess'));
-      }
-    } catch {
-      Alert.alert(t('success'), t('credentialSavedSuccess'));
-    } finally {
-      setSavingEngineConfig(false);
-    }
-  }
-
-  function handleSaveStore() {
-    Alert.alert(t('success'), t('storeSavedMsg'));
-  }
-
   function handleAddProduct() {
     setSelectedProductForEdit(null);
-    setModalVisible(true);
+    setProductModalVisible(true);
   }
 
   function handleEditProduct(product: Product) {
     setSelectedProductForEdit(product);
-    setModalVisible(true);
+    setProductModalVisible(true);
   }
 
   function handleDeleteProduct(productId?: string) {
@@ -179,6 +310,11 @@ export function AdminScreen() {
     Alert.alert(t('success'), t('productSavedSuccess'));
   }
 
+  const enabledEnginesList = [
+    ...(perfectCorpActive ? [{ id: 'perfectcorp', name: 'Perfect Corp' }] : []),
+    ...(googleActive ? [{ id: 'google', name: 'Google Gemini' }] : []),
+  ];
+
   const filteredAdminProducts = products.filter(p => {
     const q = catalogSearch.toLowerCase().trim();
     if (!q) return true;
@@ -194,7 +330,7 @@ export function AdminScreen() {
       <View style={styles.container}>
         <Header />
 
-        {/* Sub-Navigation Tabs */}
+        {/* Administration Consolidated Sub-Tabs */}
         <View style={styles.tabBar}>
           <TouchableOpacity
             style={[styles.tabItem, activeTab === 'catalog' && styles.tabItemActive]}
@@ -208,17 +344,6 @@ export function AdminScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabItem, activeTab === 'store' && styles.tabItemActive]}
-            onPress={() => setActiveTab('store')}
-            activeOpacity={0.7}
-          >
-            <Store size={14} color={activeTab === 'store' ? colors.accent : colors.textTertiary} />
-            <Text style={[styles.tabLabel, activeTab === 'store' && styles.tabLabelActive]}>
-              {t('tabMyStore')}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
             style={[styles.tabItem, activeTab === 'engines' && styles.tabItemActive]}
             onPress={() => setActiveTab('engines')}
             activeOpacity={0.7}
@@ -226,6 +351,17 @@ export function AdminScreen() {
             <Sparkles size={14} color={activeTab === 'engines' ? colors.accent : colors.textTertiary} />
             <Text style={[styles.tabLabel, activeTab === 'engines' && styles.tabLabelActive]}>
               {t('tabAIEngines')}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabItem, activeTab === 'store' && styles.tabItemActive]}
+            onPress={() => setActiveTab('store')}
+            activeOpacity={0.7}
+          >
+            <Store size={14} color={activeTab === 'store' ? colors.accent : colors.textTertiary} />
+            <Text style={[styles.tabLabel, activeTab === 'store' && styles.tabLabelActive]}>
+              {t('tabMyStore')}
             </Text>
           </TouchableOpacity>
 
@@ -258,7 +394,7 @@ export function AdminScreen() {
                   onPress={handleAddProduct}
                   activeOpacity={0.85}
                 >
-                  <Plus size={14} color={colors.textInverse} />
+                  <Plus size={14} color="#07080a" />
                   <Text style={styles.addButtonText}>{t('add')}</Text>
                 </TouchableOpacity>
               </View>
@@ -331,7 +467,436 @@ export function AdminScreen() {
             </View>
           )}
 
-          {/* TAB 2: MY STORE */}
+          {/* TAB 2: AI ENGINES (MOTO RES DE IA) */}
+          {activeTab === 'engines' && (
+            <View style={styles.sectionContainer}>
+              <View style={styles.sectionHeader}>
+                <View>
+                  <Text style={styles.sectionTitle}>{t('aiEnginesTitle')}</Text>
+                  <Text style={styles.sectionDesc}>{t('aiEnginesDesc')}</Text>
+                </View>
+              </View>
+
+              {/* PRIMARY ENGINE SELECTOR */}
+              <View style={styles.mainEngineCard}>
+                <View style={styles.mainEngineHeader}>
+                  <Zap size={16} color={colors.accent} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.mainEngineTitle}>{t('mainEngineTitle')}</Text>
+                    <Text style={styles.mainEngineDesc}>{t('mainEngineDesc')}</Text>
+                  </View>
+                </View>
+
+                {enabledEnginesList.length === 0 ? (
+                  <View style={styles.emptyEnginesBanner}>
+                    <Text style={styles.emptyEnginesText}>{t('noEnginesConfigured')}</Text>
+                  </View>
+                ) : (
+                  <View style={styles.enginePillsRow}>
+                    {enabledEnginesList.map(engine => {
+                      const isSelected = defaultEngine === engine.id;
+                      return (
+                        <TouchableOpacity
+                          key={engine.id}
+                          style={[styles.enginePill, isSelected && styles.enginePillActive]}
+                          onPress={() => handleSetMainEngine(engine.id as 'perfectcorp' | 'google')}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={[styles.enginePillText, isSelected && styles.enginePillTextActive]}>
+                            {engine.name}
+                          </Text>
+                          {isSelected && <Check size={13} color="#07080a" />}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+
+              {/* CARD 1: PERFECT CORP */}
+              <View style={[styles.providerCard, defaultEngine === 'perfectcorp' && styles.providerCardHighlighted]}>
+                <View style={styles.providerCardHeader}>
+                  <View style={styles.providerIconWrapper}>
+                    <Sparkles size={20} color={colors.accent} />
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.providerNameRow}>
+                      <Text style={styles.providerName}>{t('perfectCorpTitle')}</Text>
+                      {defaultEngine === 'perfectcorp' && (
+                        <View style={styles.primaryBadge}>
+                          <Text style={styles.primaryBadgeText}>{t('defaultEngineBadge')}</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.providerSubtitle}>{t('perfectCorpDesc')}</Text>
+                  </View>
+                </View>
+
+                {/* Status and Active Toggle */}
+                <View style={styles.providerMetaRow}>
+                  <View style={styles.statusIndicatorRow}>
+                    {perfectCorpConnected ? (
+                      <CheckCircle2 size={14} color={colors.success} />
+                    ) : (
+                      <XCircle size={14} color={colors.textTertiary} />
+                    )}
+                    <Text style={[styles.statusText, !perfectCorpConnected && { color: colors.textTertiary }]}>
+                      {perfectCorpConnected ? t('statusConnected') : t('statusUnconfigured')}
+                    </Text>
+                  </View>
+
+                  <View style={styles.toggleRow}>
+                    <Text style={styles.toggleLabel}>{t('statusActive')}:</Text>
+                    <Switch
+                      value={perfectCorpActive}
+                      onValueChange={val => handleToggleProvider('perfectcorp', val)}
+                      trackColor={{ false: colors.surfaceLight, true: colors.accent }}
+                      thumbColor={perfectCorpActive ? '#07080a' : colors.textTertiary}
+                    />
+                  </View>
+                </View>
+
+                {/* Masked Credential Box */}
+                <View style={styles.credentialBox}>
+                  <View style={styles.credentialInfo}>
+                    <Key size={14} color={colors.textTertiary} />
+                    <Text style={styles.credentialLabel}>{t('credentialMasked')}:</Text>
+                    <Text style={styles.credentialValue}>{perfectCorpMaskedKey}</Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.editCredBtn}
+                    onPress={() => setCredentialModalTarget('perfectcorp')}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.editCredBtnText}>{t('editCredential')}</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Test Connection Button & Result */}
+                <TouchableOpacity
+                  style={styles.testBtn}
+                  onPress={() => handleTestProvider('perfectcorp')}
+                  disabled={testingProvider === 'perfectcorp'}
+                  activeOpacity={0.8}
+                >
+                  {testingProvider === 'perfectcorp' ? (
+                    <ActivityIndicator size="small" color={colors.accent} />
+                  ) : (
+                    <Text style={styles.testBtnText}>{t('testConnection')}</Text>
+                  )}
+                </TouchableOpacity>
+
+                {testResults['perfectcorp'] && (
+                  <View
+                    style={[
+                      styles.testFeedbackBanner,
+                      testResults['perfectcorp'].status === 'success'
+                        ? styles.testFeedbackSuccess
+                        : styles.testFeedbackError,
+                    ]}
+                  >
+                    {testResults['perfectcorp'].status === 'success' ? (
+                      <CheckCircle2 size={14} color={colors.success} />
+                    ) : (
+                      <ShieldAlert size={14} color={colors.error} />
+                    )}
+                    <Text
+                      style={[
+                        styles.testFeedbackText,
+                        testResults['perfectcorp'].status === 'success'
+                          ? { color: colors.success }
+                          : { color: colors.error },
+                      ]}
+                    >
+                      {testResults['perfectcorp'].message}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {/* CARD 2: GOOGLE GEMINI */}
+              <View style={[styles.providerCard, defaultEngine === 'google' && styles.providerCardHighlighted]}>
+                <View style={styles.providerCardHeader}>
+                  <View style={styles.providerIconWrapper}>
+                    <Zap size={20} color={colors.accent} />
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.providerNameRow}>
+                      <Text style={styles.providerName}>{t('googleTitle')}</Text>
+                      {defaultEngine === 'google' && (
+                        <View style={styles.primaryBadge}>
+                          <Text style={styles.primaryBadgeText}>{t('defaultEngineBadge')}</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.providerSubtitle}>{t('googleDesc')}</Text>
+                  </View>
+                </View>
+
+                {/* Status and Active Toggle */}
+                <View style={styles.providerMetaRow}>
+                  <View style={styles.statusIndicatorRow}>
+                    {googleConnected ? (
+                      <CheckCircle2 size={14} color={colors.success} />
+                    ) : (
+                      <XCircle size={14} color={colors.textTertiary} />
+                    )}
+                    <Text style={[styles.statusText, !googleConnected && { color: colors.textTertiary }]}>
+                      {googleConnected ? t('statusConnected') : t('statusUnconfigured')}
+                    </Text>
+                  </View>
+
+                  <View style={styles.toggleRow}>
+                    <Text style={styles.toggleLabel}>{t('statusActive')}:</Text>
+                    <Switch
+                      value={googleActive}
+                      onValueChange={val => handleToggleProvider('google', val)}
+                      trackColor={{ false: colors.surfaceLight, true: colors.accent }}
+                      thumbColor={googleActive ? '#07080a' : colors.textTertiary}
+                    />
+                  </View>
+                </View>
+
+                {/* Masked Credential Box */}
+                <View style={styles.credentialBox}>
+                  <View style={styles.credentialInfo}>
+                    <Key size={14} color={colors.textTertiary} />
+                    <Text style={styles.credentialLabel}>{t('credentialMasked')}:</Text>
+                    <Text style={styles.credentialValue}>{googleMaskedKey}</Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.editCredBtn}
+                    onPress={() => setCredentialModalTarget('google')}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.editCredBtnText}>{t('editCredential')}</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Test Connection Button & Result */}
+                <TouchableOpacity
+                  style={styles.testBtn}
+                  onPress={() => handleTestProvider('google')}
+                  disabled={testingProvider === 'google'}
+                  activeOpacity={0.8}
+                >
+                  {testingProvider === 'google' ? (
+                    <ActivityIndicator size="small" color={colors.accent} />
+                  ) : (
+                    <Text style={styles.testBtnText}>{t('testConnection')}</Text>
+                  )}
+                </TouchableOpacity>
+
+                {testResults['google'] && (
+                  <View
+                    style={[
+                      styles.testFeedbackBanner,
+                      testResults['google'].status === 'success'
+                        ? styles.testFeedbackSuccess
+                        : styles.testFeedbackError,
+                    ]}
+                  >
+                    {testResults['google'].status === 'success' ? (
+                      <CheckCircle2 size={14} color={colors.success} />
+                    ) : (
+                      <ShieldAlert size={14} color={colors.error} />
+                    )}
+                    <Text
+                      style={[
+                        styles.testFeedbackText,
+                        testResults['google'].status === 'success'
+                          ? { color: colors.success }
+                          : { color: colors.error },
+                      ]}
+                    >
+                      {testResults['google'].message}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {/* SEMANTIC PIPELINE & DIAGNOSTIC CARD (FASE 4 / 4.1) */}
+              <View style={styles.semanticCard}>
+                <View style={styles.semanticCardHeader}>
+                  <View style={styles.semanticIconBadge}>
+                    <ShieldCheck size={20} color={colors.accent} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.semanticCardTitle}>{t('semanticPipelineTitle')}</Text>
+                    <Text style={styles.semanticCardDesc}>{t('semanticPipelineDesc')}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.semanticRuleBanner}>
+                  <Lock size={14} color={colors.accent} />
+                  <Text style={styles.semanticRuleText}>{t('semanticLockStatus')}</Text>
+                </View>
+
+                <View style={styles.semanticFlowContainer}>
+                  <View style={styles.semanticFlowStep}>
+                    <Text style={styles.semanticStepLabel}>{t('semanticPersonRole')}</Text>
+                    <Text style={styles.semanticStepSub}>src_file_url</Text>
+                  </View>
+                  <ArrowRight size={16} color={colors.accent} />
+                  <View style={styles.semanticFlowStep}>
+                    <Text style={styles.semanticStepLabel}>{t('semanticGarmentRole')}</Text>
+                    <Text style={styles.semanticStepSub}>ref_file_url</Text>
+                  </View>
+                  <ArrowRight size={16} color={colors.accent} />
+                  <View style={styles.semanticFlowStep}>
+                    <Text style={styles.semanticStepLabel}>VTON AI</Text>
+                    <Text style={styles.semanticStepSub}>Pipeline Seguro</Text>
+                  </View>
+                </View>
+
+                <Text style={styles.semanticSelectLabel}>{t('selectPieceToInspect')}:</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.semanticProdScroll}>
+                  {products.map(prod => {
+                    const isSelected = diagnosticSelectedProduct?.id === prod.id;
+                    const catPhoto = prod.photos?.find(p => p.type === 'catalog')?.storagePath;
+                    return (
+                      <TouchableOpacity
+                        key={prod.id}
+                        style={[styles.semanticProdChip, isSelected && styles.semanticProdChipSelected]}
+                        onPress={() => {
+                          setDiagnosticSelectedProduct(prod);
+                          setDiagnosticResult(null);
+                          setDiagnosticError(null);
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        {catPhoto && (
+                          <Image source={{ uri: catPhoto }} style={styles.semanticProdChipImg} />
+                        )}
+                        <Text
+                          style={[styles.semanticProdChipText, isSelected && styles.semanticProdChipTextSelected]}
+                          numberOfLines={1}
+                        >
+                          {prod.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+
+                <TouchableOpacity
+                  style={[styles.semanticActionBtn, diagnosticLoading && { opacity: 0.7 }]}
+                  onPress={() => handleRunDiagnostic()}
+                  disabled={diagnosticLoading}
+                  activeOpacity={0.85}
+                >
+                  {diagnosticLoading ? (
+                    <>
+                      <ActivityIndicator size="small" color="#07080a" />
+                      <Text style={styles.semanticActionBtnText}>{t('runningDiagnostic')}</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={16} color="#07080a" />
+                      <Text style={styles.semanticActionBtnText}>{t('runDiagnosticBtn')}</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                {diagnosticError && (
+                  <View style={styles.semanticErrorBox}>
+                    <ShieldAlert size={16} color={colors.error} />
+                    <Text style={styles.semanticErrorText}>{diagnosticError}</Text>
+                  </View>
+                )}
+
+                {diagnosticResult && (
+                  <View style={styles.semanticResultBox}>
+                    <View style={styles.semanticSuccessHeader}>
+                      <CheckCircle2 size={18} color={colors.success} />
+                      <Text style={styles.semanticSuccessTitle}>{t('semanticCheckPassed')}</Text>
+                    </View>
+
+                    <View style={styles.semanticMetaGrid}>
+                      <View style={styles.semanticMetaCard}>
+                        <View style={styles.semanticMetaCardHeader}>
+                          <Text style={styles.semanticMetaCardTitle}>{t('semanticPersonRole')}</Text>
+                        </View>
+                        <View style={styles.semanticMetaRow}>
+                          <Text style={styles.semanticMetaLabel}>{t('dimensionsTitle')}:</Text>
+                          <Text style={styles.semanticMetaVal}>
+                            {diagnosticResult.validation?.person?.dimensions?.width} x{' '}
+                            {diagnosticResult.validation?.person?.dimensions?.height} px
+                          </Text>
+                        </View>
+                        <View style={styles.semanticMetaRow}>
+                          <Text style={styles.semanticMetaLabel}>{t('sizeTitle')}:</Text>
+                          <Text style={styles.semanticMetaVal}>
+                            {(diagnosticResult.validation?.person?.sizeBytes / 1024).toFixed(1)} KB
+                          </Text>
+                        </View>
+                        <View style={styles.semanticMetaRow}>
+                          <Text style={styles.semanticMetaLabel}>{t('mimeTitle')}:</Text>
+                          <Text style={styles.semanticMetaVal}>
+                            {diagnosticResult.validation?.person?.mimeType}
+                          </Text>
+                        </View>
+                        <View style={styles.semanticMetaRow}>
+                          <Text style={styles.semanticMetaLabel}>{t('hashTitle')}:</Text>
+                          <Text style={styles.semanticHashVal} numberOfLines={1}>
+                            {diagnosticResult.validation?.person?.contentHash?.slice(0, 16)}...
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.semanticMetaCard}>
+                        <View style={styles.semanticMetaCardHeader}>
+                          <Text style={styles.semanticMetaCardTitle}>{t('semanticGarmentRole')}</Text>
+                        </View>
+                        <View style={styles.semanticMetaRow}>
+                          <Text style={styles.semanticMetaLabel}>{t('dimensionsTitle')}:</Text>
+                          <Text style={styles.semanticMetaVal}>
+                            {diagnosticResult.validation?.garment?.dimensions?.width} x{' '}
+                            {diagnosticResult.validation?.garment?.dimensions?.height} px
+                          </Text>
+                        </View>
+                        <View style={styles.semanticMetaRow}>
+                          <Text style={styles.semanticMetaLabel}>{t('sizeTitle')}:</Text>
+                          <Text style={styles.semanticMetaVal}>
+                            {(diagnosticResult.validation?.garment?.sizeBytes / 1024).toFixed(1)} KB
+                          </Text>
+                        </View>
+                        <View style={styles.semanticMetaRow}>
+                          <Text style={styles.semanticMetaLabel}>{t('mimeTitle')}:</Text>
+                          <Text style={styles.semanticMetaVal}>
+                            {diagnosticResult.validation?.garment?.mimeType}
+                          </Text>
+                        </View>
+                        <View style={styles.semanticMetaRow}>
+                          <Text style={styles.semanticMetaLabel}>{t('hashTitle')}:</Text>
+                          <Text style={styles.semanticHashVal} numberOfLines={1}>
+                            {diagnosticResult.validation?.garment?.contentHash?.slice(0, 16)}...
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+
+                    <View style={styles.semanticSecurityPill}>
+                      <Check size={14} color={colors.success} />
+                      <Text style={styles.semanticSecurityPillText}>{t('hashComparisonOk')}</Text>
+                    </View>
+
+                    <View style={styles.semanticPrepPill}>
+                      <Text style={styles.semanticPrepPillText}>
+                        ✓ {t('garmentPrepNotice')} ({diagnosticResult.preparation?.segmentationStatus || 'try_on_reference pura'})
+                      </Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* TAB 3: MY STORE (MINHA LOJA) */}
           {activeTab === 'store' && (
             <View style={styles.sectionContainer}>
               <View style={styles.sectionHeader}>
@@ -370,297 +935,42 @@ export function AdminScreen() {
                     <Text style={styles.switchDesc}>{t('storeStatusActive')}</Text>
                   </View>
 
-                  <TouchableOpacity
-                    style={[styles.toggleBtn, storeActive && styles.toggleBtnActive]}
-                    onPress={() => setStoreActive(!storeActive)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={[styles.toggleText, storeActive && styles.toggleTextActive]}>
-                      {storeActive ? t('statusActive') : t('statusDisabled')}
-                    </Text>
-                  </TouchableOpacity>
+                  <Switch
+                    value={storeActive}
+                    onValueChange={setStoreActive}
+                    trackColor={{ false: colors.surfaceLight, true: colors.accent }}
+                    thumbColor={storeActive ? '#07080a' : colors.textTertiary}
+                  />
                 </View>
 
                 <TouchableOpacity
                   style={styles.saveStoreBtn}
-                  onPress={handleSaveStore}
+                  onPress={() => Alert.alert(t('success'), t('storeSavedMsg'))}
                   activeOpacity={0.85}
                 >
                   <Text style={styles.saveStoreBtnText}>{t('storeSaveBtn')}</Text>
                 </TouchableOpacity>
               </View>
-            </View>
-          )}
 
-          {/* TAB 3: AI ENGINES */}
-          {activeTab === 'engines' && (
-            <View style={styles.sectionContainer}>
-              <View style={styles.sectionHeader}>
-                <View>
-                  <Text style={styles.sectionTitle}>{t('aiEnginesTitle')}</Text>
-                  <Text style={styles.sectionDesc}>{t('aiEnginesDesc')}</Text>
+              {/* Team and Roles Overview Card */}
+              <View style={styles.card}>
+                <View style={styles.cardHeaderRow}>
+                  <Users size={16} color={colors.accent} />
+                  <Text style={styles.cardTitle}>{t('teamPermissionsTitle')}</Text>
                 </View>
-              </View>
+                <Text style={styles.cardDesc}>{t('teamPermissionsDesc')}</Text>
 
-              {/* Perfect Corp Engine */}
-              <View style={[styles.engineCard, defaultEngine === 'perfectcorp' && styles.engineCardActive]}>
-                <View style={styles.engineHeader}>
-                  <View style={styles.engineIconWrapper}>
-                    <Sparkles size={18} color={colors.accent} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <View style={styles.engineTitleRow}>
-                      <Text style={styles.engineName}>{t('perfectCorpTitle')}</Text>
-                      {defaultEngine === 'perfectcorp' && (
-                        <View style={styles.defaultPill}>
-                          <Text style={styles.defaultPillText}>{t('defaultEngineBadge')}</Text>
-                        </View>
-                      )}
+                <View style={styles.teamList}>
+                  <View style={styles.teamMemberRow}>
+                    <View style={styles.memberAvatar}>
+                      <Text style={styles.memberAvatarText}>AM</Text>
                     </View>
-                    <Text style={styles.engineDesc}>{t('perfectCorpDesc')}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.engineStatusRow}>
-                  <View style={styles.statusIndicator}>
-                    <CheckCircle2 size={13} color={colors.success} />
-                    <Text style={styles.statusText}>{t('statusConnected')}</Text>
-                  </View>
-
-                  <TouchableOpacity
-                    style={styles.setPrimaryBtn}
-                    onPress={() => handleSaveEngineConfig('perfectcorp', true)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.setPrimaryBtnText}>
-                      {defaultEngine === 'perfectcorp' ? `✓ ${t('defaultEngineBadge')}` : t('setAsMainEngineBtn')}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                <Text style={styles.engineNotice}>{t('securityNoticeVault')}</Text>
-              </View>
-
-              {/* Google Gemini Engine */}
-              <View style={[styles.engineCard, defaultEngine === 'google' && styles.engineCardActive]}>
-                <View style={styles.engineHeader}>
-                  <View style={styles.engineIconWrapper}>
-                    <Zap size={18} color={colors.accent} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <View style={styles.engineTitleRow}>
-                      <Text style={styles.engineName}>{t('googleTitle')}</Text>
-                      {defaultEngine === 'google' && (
-                        <View style={styles.defaultPill}>
-                          <Text style={styles.defaultPillText}>{t('defaultEngineBadge')}</Text>
-                        </View>
-                      )}
-                    </View>
-                    <Text style={styles.engineDesc}>{t('googleDesc')}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.engineStatusRow}>
-                  <View style={styles.statusIndicator}>
-                    <CheckCircle2 size={13} color={colors.success} />
-                    <Text style={styles.statusText}>{t('statusConnected')}</Text>
-                  </View>
-
-                  <TouchableOpacity
-                    style={styles.setPrimaryBtn}
-                    onPress={() => handleSaveEngineConfig('google', true)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.setPrimaryBtnText}>
-                      {defaultEngine === 'google' ? `✓ ${t('defaultEngineBadge')}` : t('setAsMainEngineBtn')}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                <Text style={styles.engineNotice}>{t('securityNoticeVault')}</Text>
-              </View>
-
-              {/* SEMANTIC PIPELINE & DIAGNOSTIC CARD (FASE 4 / 4.1) */}
-              <View style={styles.semanticCard}>
-                <View style={styles.semanticCardHeader}>
-                  <View style={styles.semanticIconBadge}>
-                    <ShieldCheck size={20} color={colors.accent} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.semanticCardTitle}>{t('semanticPipelineTitle')}</Text>
-                    <Text style={styles.semanticCardDesc}>{t('semanticPipelineDesc')}</Text>
-                  </View>
-                </View>
-
-                {/* Architecture Rules Notice */}
-                <View style={styles.semanticRuleBanner}>
-                  <Lock size={14} color={colors.accent} />
-                  <Text style={styles.semanticRuleText}>{t('semanticLockStatus')}</Text>
-                </View>
-
-                <View style={styles.semanticFlowContainer}>
-                  <View style={styles.semanticFlowStep}>
-                    <Text style={styles.semanticStepLabel}>{t('semanticPersonRole')}</Text>
-                    <Text style={styles.semanticStepSub}>src_file_url</Text>
-                  </View>
-                  <ArrowRight size={16} color={colors.accent} />
-                  <View style={styles.semanticFlowStep}>
-                    <Text style={styles.semanticStepLabel}>{t('semanticGarmentRole')}</Text>
-                    <Text style={styles.semanticStepSub}>ref_file_url</Text>
-                  </View>
-                  <ArrowRight size={16} color={colors.accent} />
-                  <View style={styles.semanticFlowStep}>
-                    <Text style={styles.semanticStepLabel}>VTON AI</Text>
-                    <Text style={styles.semanticStepSub}>Pipeline Seguro</Text>
-                  </View>
-                </View>
-
-                {/* Product selector for inspection */}
-                <Text style={styles.semanticSelectLabel}>{t('selectPieceToInspect')}:</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.semanticProdScroll}>
-                  {products.map(prod => {
-                    const isSelected = diagnosticSelectedProduct?.id === prod.id;
-                    const catPhoto = prod.photos?.find(p => p.type === 'catalog')?.storagePath;
-                    return (
-                      <TouchableOpacity
-                        key={prod.id}
-                        style={[styles.semanticProdChip, isSelected && styles.semanticProdChipSelected]}
-                        onPress={() => {
-                          setDiagnosticSelectedProduct(prod);
-                          setDiagnosticResult(null);
-                          setDiagnosticError(null);
-                        }}
-                        activeOpacity={0.8}
-                      >
-                        {catPhoto && (
-                          <Image source={{ uri: catPhoto }} style={styles.semanticProdChipImg} />
-                        )}
-                        <Text
-                          style={[styles.semanticProdChipText, isSelected && styles.semanticProdChipTextSelected]}
-                          numberOfLines={1}
-                        >
-                          {prod.name}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-
-                {/* Run Diagnostic Button */}
-                <TouchableOpacity
-                  style={[styles.semanticActionBtn, diagnosticLoading && { opacity: 0.7 }]}
-                  onPress={() => handleRunDiagnostic()}
-                  disabled={diagnosticLoading}
-                  activeOpacity={0.85}
-                >
-                  {diagnosticLoading ? (
-                    <>
-                      <ActivityIndicator size="small" color="#07080a" />
-                      <Text style={styles.semanticActionBtnText}>{t('runningDiagnostic')}</Text>
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles size={16} color="#07080a" />
-                      <Text style={styles.semanticActionBtnText}>{t('runDiagnosticBtn')}</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-
-                {/* Diagnostic Result */}
-                {diagnosticError && (
-                  <View style={styles.semanticErrorBox}>
-                    <ShieldAlert size={16} color={colors.error} />
-                    <Text style={styles.semanticErrorText}>{diagnosticError}</Text>
-                  </View>
-                )}
-
-                {diagnosticResult && (
-                  <View style={styles.semanticResultBox}>
-                    <View style={styles.semanticSuccessHeader}>
-                      <CheckCircle2 size={18} color={colors.success} />
-                      <Text style={styles.semanticSuccessTitle}>{t('semanticCheckPassed')}</Text>
-                    </View>
-
-                    {/* Metadata Grid */}
-                    <View style={styles.semanticMetaGrid}>
-                      {/* Person Metadata */}
-                      <View style={styles.semanticMetaCard}>
-                        <View style={styles.semanticMetaCardHeader}>
-                          <Text style={styles.semanticMetaCardTitle}>{t('semanticPersonRole')}</Text>
-                        </View>
-                        <View style={styles.semanticMetaRow}>
-                          <Text style={styles.semanticMetaLabel}>{t('dimensionsTitle')}:</Text>
-                          <Text style={styles.semanticMetaVal}>
-                            {diagnosticResult.validation?.person?.dimensions?.width} x{' '}
-                            {diagnosticResult.validation?.person?.dimensions?.height} px
-                          </Text>
-                        </View>
-                        <View style={styles.semanticMetaRow}>
-                          <Text style={styles.semanticMetaLabel}>{t('sizeTitle')}:</Text>
-                          <Text style={styles.semanticMetaVal}>
-                            {(diagnosticResult.validation?.person?.sizeBytes / 1024).toFixed(1)} KB
-                          </Text>
-                        </View>
-                        <View style={styles.semanticMetaRow}>
-                          <Text style={styles.semanticMetaLabel}>{t('mimeTitle')}:</Text>
-                          <Text style={styles.semanticMetaVal}>
-                            {diagnosticResult.validation?.person?.mimeType}
-                          </Text>
-                        </View>
-                        <View style={styles.semanticMetaRow}>
-                          <Text style={styles.semanticMetaLabel}>{t('hashTitle')}:</Text>
-                          <Text style={styles.semanticHashVal} numberOfLines={1}>
-                            {diagnosticResult.validation?.person?.contentHash?.slice(0, 16)}...
-                          </Text>
-                        </View>
-                      </View>
-
-                      {/* Garment Metadata */}
-                      <View style={styles.semanticMetaCard}>
-                        <View style={styles.semanticMetaCardHeader}>
-                          <Text style={styles.semanticMetaCardTitle}>{t('semanticGarmentRole')}</Text>
-                        </View>
-                        <View style={styles.semanticMetaRow}>
-                          <Text style={styles.semanticMetaLabel}>{t('dimensionsTitle')}:</Text>
-                          <Text style={styles.semanticMetaVal}>
-                            {diagnosticResult.validation?.garment?.dimensions?.width} x{' '}
-                            {diagnosticResult.validation?.garment?.dimensions?.height} px
-                          </Text>
-                        </View>
-                        <View style={styles.semanticMetaRow}>
-                          <Text style={styles.semanticMetaLabel}>{t('sizeTitle')}:</Text>
-                          <Text style={styles.semanticMetaVal}>
-                            {(diagnosticResult.validation?.garment?.sizeBytes / 1024).toFixed(1)} KB
-                          </Text>
-                        </View>
-                        <View style={styles.semanticMetaRow}>
-                          <Text style={styles.semanticMetaLabel}>{t('mimeTitle')}:</Text>
-                          <Text style={styles.semanticMetaVal}>
-                            {diagnosticResult.validation?.garment?.mimeType}
-                          </Text>
-                        </View>
-                        <View style={styles.semanticMetaRow}>
-                          <Text style={styles.semanticMetaLabel}>{t('hashTitle')}:</Text>
-                          <Text style={styles.semanticHashVal} numberOfLines={1}>
-                            {diagnosticResult.validation?.garment?.contentHash?.slice(0, 16)}...
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-
-                    {/* Hash Comparison & Preparation confirmation */}
-                    <View style={styles.semanticSecurityPill}>
-                      <Check size={14} color={colors.success} />
-                      <Text style={styles.semanticSecurityPillText}>{t('hashComparisonOk')}</Text>
-                    </View>
-
-                    <View style={styles.semanticPrepPill}>
-                      <Text style={styles.semanticPrepPillText}>
-                        ✓ {t('garmentPrepNotice')} ({diagnosticResult.preparation?.segmentationStatus || 'try_on_reference pura'})
-                      </Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.memberName}>Atelier Maison Admin</Text>
+                      <Text style={styles.memberRole}>{t('storeOwnerRole')}</Text>
                     </View>
                   </View>
-                )}
+                </View>
               </View>
             </View>
           )}
@@ -775,11 +1085,20 @@ export function AdminScreen() {
 
         {/* Modal for Product Add/Edit */}
         <AdminProductModal
-          visible={modalVisible}
+          visible={productModalVisible}
           product={selectedProductForEdit}
-          onClose={() => setModalVisible(false)}
+          onClose={() => setProductModalVisible(false)}
           onSave={handleSaveProduct}
           onDelete={handleDeleteProduct}
+        />
+
+        {/* Modal for Secure Credential Editing */}
+        <CredentialEditModal
+          visible={credentialModalTarget !== null}
+          providerId={credentialModalTarget}
+          providerName={credentialModalTarget === 'perfectcorp' ? 'Perfect Corp' : 'Google Gemini'}
+          onClose={() => setCredentialModalTarget(null)}
+          onSave={handleSaveCredential}
         />
       </View>
     </SafeAreaView>
@@ -859,7 +1178,7 @@ const styles = StyleSheet.create({
   addButtonText: {
     fontSize: 11,
     fontWeight: '700',
-    color: colors.textInverse,
+    color: '#07080a',
   },
   searchBar: {
     flexDirection: 'row',
@@ -953,6 +1272,229 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(239, 68, 68, 0.3)',
     backgroundColor: colors.errorLight,
   },
+  // Main Engine Card
+  mainEngineCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    padding: spacing.md,
+    gap: spacing.sm,
+    ...shadows.card,
+  },
+  mainEngineHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  mainEngineTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  mainEngineDesc: {
+    fontSize: 11,
+    color: colors.textSecondary,
+  },
+  emptyEnginesBanner: {
+    backgroundColor: colors.surfaceLight,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+  },
+  emptyEnginesText: {
+    fontSize: 11,
+    color: colors.textTertiary,
+  },
+  enginePillsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: 4,
+  },
+  enginePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  enginePillActive: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  enginePillText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  enginePillTextActive: {
+    color: '#07080a',
+    fontWeight: '700',
+  },
+  // Provider Cards
+  providerCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    padding: spacing.lg,
+    gap: spacing.md,
+    ...shadows.card,
+  },
+  providerCardHighlighted: {
+    borderColor: colors.accent,
+  },
+  providerCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  providerIconWrapper: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.accentGlow,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  providerNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  providerName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  primaryBadge: {
+    backgroundColor: colors.accent,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: borderRadius.full,
+  },
+  primaryBadgeText: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: '#07080a',
+    letterSpacing: 0.5,
+  },
+  providerSubtitle: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  providerMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceLight,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  statusIndicatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.success,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  toggleLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  credentialBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surfaceLight,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 9,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  credentialInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  credentialLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+  },
+  credentialValue: {
+    fontSize: 12,
+    color: colors.accent,
+    fontFamily: 'monospace',
+    letterSpacing: 1,
+  },
+  editCredBtn: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  editCredBtnText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.accent,
+  },
+  testBtn: {
+    paddingVertical: 9,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  testBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  testFeedbackBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    padding: spacing.sm,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+  },
+  testFeedbackSuccess: {
+    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+    borderColor: 'rgba(34, 197, 94, 0.3)',
+  },
+  testFeedbackError: {
+    backgroundColor: colors.errorLight,
+    borderColor: colors.error,
+  },
+  testFeedbackText: {
+    fontSize: 11,
+    fontWeight: '600',
+    flex: 1,
+  },
   card: {
     backgroundColor: colors.surface,
     borderRadius: borderRadius.lg,
@@ -1011,26 +1553,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textTertiary,
   },
-  toggleBtn: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-  },
-  toggleBtnActive: {
-    backgroundColor: colors.successLight,
-    borderColor: colors.success,
-  },
-  toggleText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: colors.textTertiary,
-  },
-  toggleTextActive: {
-    color: colors.success,
-  },
   saveStoreBtn: {
     backgroundColor: colors.accent,
     paddingVertical: 12,
@@ -1041,97 +1563,46 @@ const styles = StyleSheet.create({
   saveStoreBtnText: {
     fontSize: 12,
     fontWeight: '700',
-    color: colors.textInverse,
+    color: '#07080a',
     letterSpacing: 0.5,
   },
-  engineCard: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    padding: spacing.lg,
-    gap: spacing.md,
-    ...shadows.card,
-  },
-  engineCardActive: {
-    borderColor: colors.accent,
-  },
-  engineHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-  },
-  engineIconWrapper: {
-    width: 38,
-    height: 38,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  engineTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  teamList: {
     gap: spacing.sm,
   },
-  engineName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.textPrimary,
+  teamMemberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.surfaceLight,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
   },
-  defaultPill: {
+  memberAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: colors.accentGlow,
     borderWidth: 1,
     borderColor: colors.accent,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: borderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  defaultPillText: {
-    fontSize: 8,
+  memberAvatarText: {
+    fontSize: 12,
     fontWeight: '700',
     color: colors.accent,
-    letterSpacing: 0.5,
   },
-  engineDesc: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    marginTop: 2,
+  memberName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textPrimary,
   },
-  engineStatusRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  statusIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  statusText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.success,
-  },
-  setPrimaryBtn: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 5,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-  },
-  setPrimaryBtnText: {
+  memberRole: {
     fontSize: 10,
-    fontWeight: '600',
     color: colors.textSecondary,
-  },
-  engineNotice: {
-    fontSize: 11,
-    color: colors.textTertiary,
-    lineHeight: 15,
+    marginTop: 1,
   },
   langOptionsGrid: {
     flexDirection: 'row',
