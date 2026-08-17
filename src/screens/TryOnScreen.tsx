@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Check,
   ChevronRight,
+  AlertTriangle,
 } from 'lucide-react-native';
 import { colors, spacing, borderRadius, shadows, formatCurrency } from '../theme';
 import { useI18n } from '../i18n';
@@ -48,9 +49,9 @@ export function TryOnScreen({ route }: any) {
     }
   }, [route?.params?.selectedProduct, setSelectedTryOnProduct]);
 
-  // Filter available products for try on
+  // Filter available active products for try on
   const availableProducts = products.filter(p => p.active !== false);
-  const currentProduct = selectedTryOnProduct || availableProducts[0] || products[0];
+  const currentProduct = selectedTryOnProduct;
 
   // Pick image from gallery
   async function pickImageFromGallery() {
@@ -140,9 +141,7 @@ export function TryOnScreen({ route }: any) {
       return;
     }
 
-    const referencePhoto =
-      currentProduct.photos?.find(p => p.type === 'try_on_reference')?.storagePath ||
-      currentProduct.photos?.find(p => p.type === 'catalog')?.storagePath;
+    const referencePhoto = currentProduct.photos?.find(p => p.type === 'try_on_reference')?.storagePath;
 
     if (!referencePhoto) {
       Alert.alert(t('tryOnErrorTitle'), t('garmentNotReadyMsg'));
@@ -153,6 +152,7 @@ export function TryOnScreen({ route }: any) {
 
     try {
       const storeId = currentProduct.storeId || 'demo-store-001';
+
       // Verify if at least one AI engine is configured
       try {
         const configRes = await fetch(`/api/store/${storeId}/providers`);
@@ -166,27 +166,27 @@ export function TryOnScreen({ route }: any) {
           }
         }
       } catch {
-        // Fallback to direct try-on
+        // Proceed to try-on
       }
 
       const payload = {
         storeId,
         productId: currentProduct.id,
-        personImage: personImage.startsWith('data:') || personImage.startsWith('http')
-          ? personImage
-          : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=768&q=80',
-        category: currentProduct.category,
+        personImage,
         selectedProviders: ['perfectcorp'],
       };
 
-      const response = await fetch('/api/try-on', {
+      const response = await fetch('/api/try-on/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        throw new Error('Falha no servidor');
+        const errJson = await response.json().catch(() => ({}));
+        const userMsg = errJson.message || t('tryOnErrorMsg');
+        Alert.alert(t('tryOnErrorTitle'), userMsg);
+        return;
       }
 
       const data: MultiProviderTryOnResponse = await response.json();
@@ -196,30 +196,12 @@ export function TryOnScreen({ route }: any) {
         setActiveResult(firstSuccess);
         setResultModalVisible(true);
       } else {
-        setTimeout(() => {
-          setActiveResult({
-            provider: 'perfectcorp',
-            status: 'success',
-            resultImage: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=800&q=85',
-            providerTaskId: 'demo-task',
-            errorCode: null,
-            errorMessage: null,
-            durationMs: 3200,
-          });
-          setResultModalVisible(true);
-        }, 1000);
+        const failedItem = data.results?.find(r => r.status === 'failed');
+        const reason = failedItem?.errorMessage || t('tryOnErrorMsg');
+        Alert.alert(t('tryOnErrorTitle'), reason);
       }
-    } catch {
-      setActiveResult({
-        provider: 'perfectcorp',
-        status: 'success',
-        resultImage: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=800&q=85',
-        providerTaskId: 'demo-task',
-        errorCode: null,
-        errorMessage: null,
-        durationMs: 3200,
-      });
-      setResultModalVisible(true);
+    } catch (err: any) {
+      Alert.alert(t('tryOnErrorTitle'), err.message || t('tryOnErrorMsg'));
     } finally {
       setLoading(false);
     }
@@ -336,7 +318,8 @@ export function TryOnScreen({ route }: any) {
                 const isSelected = currentProduct?.id === product.id;
                 const photoUrl =
                   product.photos?.find(p => p.type === 'catalog')?.storagePath ||
-                  'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=600&q=80';
+                  product.photos?.find(p => p.type === 'try_on_reference')?.storagePath ||
+                  '';
 
                 return (
                   <TouchableOpacity
@@ -348,7 +331,13 @@ export function TryOnScreen({ route }: any) {
                     onPress={() => setSelectedTryOnProduct(product)}
                     activeOpacity={0.85}
                   >
-                    <Image source={{ uri: photoUrl }} style={styles.garmentImage} resizeMode="cover" />
+                    {photoUrl ? (
+                      <Image source={{ uri: photoUrl }} style={styles.garmentImage} resizeMode="cover" />
+                    ) : (
+                      <View style={[styles.garmentImage, { backgroundColor: colors.surfaceLight, alignItems: 'center', justifyContent: 'center' }]}>
+                        <ImageIcon size={24} color={colors.textTertiary} />
+                      </View>
+                    )}
 
                     {isSelected && (
                       <View style={styles.selectedBadge}>
@@ -371,12 +360,12 @@ export function TryOnScreen({ route }: any) {
             </ScrollView>
 
             {/* Selected Garment Details Bar */}
-            {currentProduct && (
+            {currentProduct ? (
               <View style={styles.selectedSummaryCard}>
                 <View style={styles.summaryLeft}>
                   <Text style={styles.summaryLabel}>{currentProduct.name}</Text>
                   <Text style={styles.summaryPrice}>
-                    {formatCurrency(currentProduct.price, currentProduct.currency)} · {currentProduct.color || 'Coleção Atelier'}
+                    {formatCurrency(currentProduct.price, currentProduct.currency)} · {currentProduct.color || 'Coleção'}
                   </Text>
                 </View>
 
@@ -388,6 +377,13 @@ export function TryOnScreen({ route }: any) {
                   <Text style={styles.detailsBtnText}>{t('viewDetails')}</Text>
                   <ChevronRight size={13} color={colors.accent} />
                 </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.noSelectionNotice}>
+                <AlertTriangle size={14} color={colors.textTertiary} />
+                <Text style={styles.noSelectionText}>
+                  {t('garmentMissingAlertMsg')}
+                </Text>
               </View>
             )}
           </View>
@@ -680,5 +676,22 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.textInverse,
     letterSpacing: 1.2,
+  },
+  noSelectionNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceLight,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  noSelectionText: {
+    fontSize: 12,
+    color: colors.textSecondary,
   },
 });

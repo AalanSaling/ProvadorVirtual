@@ -38,14 +38,9 @@ export function ProductDetailModal({
 
   if (!visible || !product) return null;
 
-  const catalogPhoto =
-    product.photos?.find(p => p.type === 'catalog')?.storagePath ||
-    'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=600&q=80';
-
-  const referencePhoto =
-    product.photos?.find(p => p.type === 'try_on_reference')?.storagePath || catalogPhoto;
-
-  const currentPhoto = activePhotoType === 'catalog' ? catalogPhoto : referencePhoto;
+  const catalogPhoto = product.photos?.find(p => p.type === 'catalog')?.storagePath || '';
+  const referencePhoto = product.photos?.find(p => p.type === 'try_on_reference')?.storagePath || '';
+  const currentPhoto = activePhotoType === 'catalog' ? catalogPhoto : (referencePhoto || catalogPhoto);
 
   function getCategoryLabel(category: GarmentCategory): string {
     switch (category) {

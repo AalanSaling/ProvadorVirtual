@@ -20,7 +20,7 @@ const storageService = new StorageService();
 const imagePrepService = ImagePreparationService.getInstance();
 const garmentPrepService = new GarmentPreparationService(catalogService, storageService, imagePrepService);
 
-tryOnRouter.post('/generate', requireAuth, rateLimitMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+const handleGenerateTryOn = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { storeId, personImage, garmentImage: clientGarmentImage, productId: rawProductId, product_id: rawProductIdSnake, selectedProviders: customProviders, tempInputStoragePath } = req.body;
 
@@ -135,7 +135,10 @@ tryOnRouter.post('/generate', requireAuth, rateLimitMiddleware, async (req: Auth
       message: err instanceof Error ? err.message : 'Failed to process Virtual Try-On request.',
     });
   }
-});
+};
+
+tryOnRouter.post('/generate', requireAuth, rateLimitMiddleware, handleGenerateTryOn);
+tryOnRouter.post('/', requireAuth, rateLimitMiddleware, handleGenerateTryOn);
 
 function toAbsoluteResultUrl(url: string | null | undefined, req: Request): string | null {
   if (!url) return null;

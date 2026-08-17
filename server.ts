@@ -7,7 +7,7 @@ import { env } from './server/config/env.js';
 import { logger } from './server/utils/logger.js';
 import { ProviderRegistry } from './server/providers/registry/ProviderRegistry.js';
 import { PerfectCorpTryOnProvider } from './server/providers/PerfectCorpTryOnProvider.js';
-import { MockGoogleGeminiProvider } from './server/providers/mocks/MockGoogleGeminiProvider.js';
+import { GoogleTryOnProvider } from './server/providers/GoogleTryOnProvider.js';
 import { StorageService } from './server/services/StorageService.js';
 import { healthRouter } from './server/routes/healthRoutes.js';
 import { tryOnRouter } from './server/routes/tryOnRoutes.js';
@@ -20,10 +20,10 @@ const __dirname = path.dirname(__filename);
 const app = express();
 app.use(express.json({ limit: '20mb' }));
 
-// 1. Initialize ProviderRegistry with real PerfectCorp provider and mock Google provider
+// 1. Initialize ProviderRegistry with real PerfectCorp and Google providers
 const registry = ProviderRegistry.getInstance();
 registry.register(new PerfectCorpTryOnProvider());
-registry.register(new MockGoogleGeminiProvider());
+registry.register(new GoogleTryOnProvider());
 
 // 2. Initialize Storage Buckets
 const storageService = new StorageService();

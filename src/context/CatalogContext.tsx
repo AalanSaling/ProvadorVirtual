@@ -141,8 +141,8 @@ interface CatalogContextType {
   products: Product[];
   userRole: UserRole;
   setUserRole: (role: UserRole) => void;
-  selectedTryOnProduct: Product;
-  setSelectedTryOnProduct: (product: Product) => void;
+  selectedTryOnProduct: Product | null;
+  setSelectedTryOnProduct: (product: Product | null) => void;
   addProduct: (productData: Partial<Product>) => Product;
   editProduct: (id: string, productData: Partial<Product>) => void;
   deleteProduct: (id: string) => void;
@@ -154,7 +154,7 @@ const CatalogContext = createContext<CatalogContextType | undefined>(undefined);
 export function CatalogProvider({ children }: { children: ReactNode }) {
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
   const [userRole, setUserRole] = useState<UserRole>('owner');
-  const [selectedTryOnProduct, setSelectedTryOnProduct] = useState<Product>(INITIAL_PRODUCTS[0]);
+  const [selectedTryOnProduct, setSelectedTryOnProduct] = useState<Product | null>(null);
 
   function addProduct(productData: Partial<Product>): Product {
     const newProduct: Product = {
@@ -192,16 +192,16 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
     setProducts(prev =>
       prev.map(prod => (prod.id === id ? ({ ...prod, ...productData } as Product) : prod))
     );
-    if (selectedTryOnProduct.id === id) {
-      setSelectedTryOnProduct(prev => ({ ...prev, ...productData } as Product));
+    if (selectedTryOnProduct?.id === id) {
+      setSelectedTryOnProduct(prev => (prev ? ({ ...prev, ...productData } as Product) : null));
     }
   }
 
   function deleteProduct(id: string) {
     setProducts(prev => {
       const filtered = prev.filter(prod => prod.id !== id);
-      if (selectedTryOnProduct.id === id && filtered.length > 0) {
-        setSelectedTryOnProduct(filtered[0]);
+      if (selectedTryOnProduct?.id === id) {
+        setSelectedTryOnProduct(null);
       }
       return filtered;
     });
