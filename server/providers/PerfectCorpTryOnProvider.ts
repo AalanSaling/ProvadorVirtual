@@ -1,6 +1,6 @@
 // server/providers/PerfectCorpTryOnProvider.ts
 import { ITryOnProvider } from './interfaces/ITryOnProvider.js';
-import { ProviderCapabilities, TryOnInput, TryOnResult, GarmentCategory } from '../types/index.js';
+import { ProviderCapabilities, TryOnInput, TryOnResult, GarmentCategory, ExecutionContext } from '../types/index.js';
 import { StorageService } from '../services/StorageService.js';
 import { validateTryOnSemanticInput } from '../utils/imageValidator.js';
 import { logger } from '../utils/logger.js';
@@ -27,15 +27,12 @@ export class PerfectCorpTryOnProvider implements ITryOnProvider {
   }
 
   private getApiHost(): string | null {
-    const host = process.env.PERFECTCORP_API_HOST;
-    if (!host || !host.trim()) {
-      return null;
-    }
+    const host = process.env.PERFECTCORP_API_HOST || 'https://api.perfectcorp.com';
     return host.trim().replace(/\/+$/, '');
   }
 
-  public async validateConfiguration(): Promise<boolean> {
-    const apiKey = this.getApiKey();
+  public async validateConfiguration(context?: Partial<ExecutionContext>): Promise<boolean> {
+    const apiKey = context?.storeApiKey || this.getApiKey();
     const apiHost = this.getApiHost();
     return Boolean(apiKey && apiHost);
   }
@@ -55,17 +52,17 @@ export class PerfectCorpTryOnProvider implements ITryOnProvider {
     }
   }
 
-  public async generateTryOn(input: TryOnInput): Promise<TryOnResult> {
+  public async generateTryOn(input: TryOnInput, context?: ExecutionContext): Promise<TryOnResult> {
     const startTime = Date.now();
     const requestId = `pc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-    // 1. Validate Credentials and Host
-    const apiKey = this.getApiKey();
+    // 1. Resolve per-store dynamic credential from ExecutionContext (with server dev fallback if available)
+    const apiKey = context?.storeApiKey || this.getApiKey();
     const apiHost = this.getApiHost();
 
     if (!apiKey || !apiHost) {
       const missingMsg = !apiKey
-        ? 'PERFECTCORP_API_KEY is missing in server environment.'
+        ? `STORE_PROVIDER_CREDENTIAL_NOT_CONFIGURED: Chave de API do Perfect Corp não configurada para a loja ${context?.storeId || input.storeId}.`
         : 'PERFECTCORP_API_HOST is missing in server environment.';
 
       logger.error(`[PerfectCorp] Auth configuration missing: ${missingMsg}`, { requestId });
@@ -137,15 +134,16 @@ export class PerfectCorpTryOnProvider implements ITryOnProvider {
     const taskEndpoint = `${apiHost}/s2s/v2.0/task/cloth-v3`;
     const garmentCategory = this.mapGarmentCategory(input.garmentCategory);
 
-    logger.info('[PerfectCorp] Creating VTON task with strictly mapped semantic inputs', {
+    logger.info('[PerfectCorp] Creating VTON task with strictly mapped semantic inputs and store credential', {
       requestId,
+      storeId: context?.storeId || input.storeId,
       category: garmentCategory,
       srcFileRole: 'PESSOA',
       refFileRole: 'ROUPA',
     });
 
     try {
-      // 3. Create Task call to Perfect Corp API
+      // 3. Create Task call to Perfect Corp API with per-store dynamic bearer token
       // src_file_url = personImage (PESSOA)
       // ref_file_url = garmentImage (ROUPA)
       // NEVER INVERT!
@@ -172,7 +170,7 @@ export class PerfectCorpTryOnProvider implements ITryOnProvider {
           resultImage: null,
           providerTaskId: null,
           errorCode: 'PERFECTCORP_AUTH_ERROR',
-          errorMessage: `Perfect Corp API authentication failed (HTTP ${httpStatus}).`,
+          errorMessage: `Perfect Corp API authentication failed (HTTP ${httpStatus}). Verifique a credencial da loja.`,
           durationMs: Date.now() - startTime,
         };
       }

@@ -155,7 +155,7 @@ export function CredentialEditModal({
                     {isSaving ? (
                       <ActivityIndicator size="small" color="#07080a" />
                     ) : (
-                      <Text style={styles.saveBtnText}>{t('save')}</Text>
+                      <Text style={styles.saveBtnText}>{t('saveAndTestBtn')}</Text>
                     )}
                   </TouchableOpacity>
                 </View>

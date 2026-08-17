@@ -5,6 +5,8 @@ import { TryOnService } from '../services/TryOnService.js';
 import { CatalogService } from '../services/CatalogService.js';
 import { StorageService } from '../services/StorageService.js';
 import { GarmentPreparationService } from '../services/GarmentPreparationService.js';
+import { ImagePreparationService } from '../services/ImagePreparationService.js';
+import { PromptBuilder } from '../services/PromptBuilder.js';
 import { PerfectCorpTryOnProvider } from '../providers/PerfectCorpTryOnProvider.js';
 import { validateTryOnSemanticInput } from '../utils/imageValidator.js';
 import { AuthenticatedRequest } from '../types/index.js';
@@ -15,7 +17,8 @@ export const tryOnRouter = Router();
 const tryOnService = new TryOnService();
 const catalogService = new CatalogService();
 const storageService = new StorageService();
-const garmentPrepService = new GarmentPreparationService(catalogService, storageService);
+const imagePrepService = ImagePreparationService.getInstance();
+const garmentPrepService = new GarmentPreparationService(catalogService, storageService, imagePrepService);
 
 tryOnRouter.post('/generate', requireAuth, rateLimitMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
@@ -188,18 +191,44 @@ tryOnRouter.all('/diagnostic/input-check', async (req: AuthenticatedRequest, res
 
     const semanticValidation = await validateTryOnSemanticInput(personImage, garmentImage, product.category);
 
-    const garmentPreparation = await garmentPrepService.prepareGarmentFromCatalog(productId, storeId);
+    const personQuality = await imagePrepService.analyzeAndValidatePerson(personImage);
+    const garmentAnalysis = await imagePrepService.analyzeGarment(catalogImageUrl || garmentImage, product.category);
+    const garmentPreparation = await garmentPrepService.processProductGarmentPreparation(productId, storeId);
+
+    const promptBuilderPreview = {
+      garmentPromptVersion: PromptBuilder.GARMENT_PROMPT_VERSION,
+      tryOnPromptVersion: PromptBuilder.TRY_ON_PROMPT_VERSION,
+      garmentPreparationPrompt: PromptBuilder.buildGarmentPreparationPrompt(product.category, garmentAnalysis, { name: product.name }),
+      tryOnPrompt: PromptBuilder.buildTryOnPrompt(product.category, {
+        subject: 'single_person',
+        identityPreservation: 'exact',
+        posePreservation: 'exact',
+        facePreservation: 'exact',
+        bodyProportionsPreservation: 'exact',
+        hairPreservation: 'exact',
+        lightingPreservation: 'coherent',
+        backgroundPreservation: 'coherent',
+        clothingReplacement: 'only_selected_garment',
+      }, {
+        category: product.category,
+        garmentType: garmentAnalysis.garmentType,
+        primaryColor: garmentAnalysis.primaryColor,
+      }),
+    };
 
     res.json({
       status: semanticValidation.valid ? 'passed' : 'failed',
       semanticLock: 'LOCKED_PERSON_TO_SRC_GARMENT_TO_REF',
       validation: semanticValidation,
+      personQuality,
+      garmentAnalysis,
       catalogVsReference: {
         catalogImageUrl,
         garmentReferenceUrl: garmentImage,
         isDistinct: catalogImageUrl !== garmentImage,
       },
       garmentPreparation,
+      promptBuilderPreview,
       providerPayloadPreview: {
         endpoint: '/s2s/v2.0/task/cloth-v3',
         method: 'POST',
@@ -224,6 +253,49 @@ tryOnRouter.all('/diagnostic/input-check', async (req: AuthenticatedRequest, res
       status: 'error',
       error: err?.code || 'DIAGNOSTIC_INPUT_CHECK_FAILED',
       message: err instanceof Error ? err.message : 'Diagnostic input check failed.',
+    });
+  }
+});
+
+/**
+ * Validates a person's photo before running try-on.
+ * Checks clarity, single person, lighting, and framing without altering identity.
+ */
+tryOnRouter.post('/person/validate', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { personImage } = req.body;
+    if (!personImage || typeof personImage !== 'string') {
+      res.status(400).json({ error: 'BAD_REQUEST', message: 'personImage is required.' });
+      return;
+    }
+
+    const qualityResult = await imagePrepService.analyzeAndValidatePerson(personImage);
+    res.json(qualityResult);
+  } catch (err: any) {
+    res.status(500).json({
+      error: 'PERSON_VALIDATION_ERROR',
+      message: err instanceof Error ? err.message : 'Erro ao validar foto da pessoa.',
+    });
+  }
+});
+
+/**
+ * Analyzes a garment image and returns structured visual attributes.
+ */
+tryOnRouter.post('/garment/analyze', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { imageUrl, category } = req.body;
+    if (!imageUrl) {
+      res.status(400).json({ error: 'BAD_REQUEST', message: 'imageUrl is required.' });
+      return;
+    }
+
+    const analysis = await imagePrepService.analyzeGarment(imageUrl, category || 'upper_body');
+    res.json(analysis);
+  } catch (err: any) {
+    res.status(500).json({
+      error: 'GARMENT_ANALYSIS_ERROR',
+      message: err instanceof Error ? err.message : 'Erro ao analisar imagem da peça.',
     });
   }
 });

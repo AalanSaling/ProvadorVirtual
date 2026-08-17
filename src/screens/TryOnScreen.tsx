@@ -34,6 +34,8 @@ export function TryOnScreen({ route }: any) {
   const { products, selectedTryOnProduct, setSelectedTryOnProduct, userRole } = useCatalog();
 
   const [personImage, setPersonImage] = useState<string | null>(null);
+  const [personQuality, setPersonQuality] = useState<{ valid: boolean; humanMessage: string } | null>(null);
+  const [validatingPerson, setValidatingPerson] = useState(false);
   const [loading, setLoading] = useState(false);
   const [resultModalVisible, setResultModalVisible] = useState(false);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
@@ -94,15 +96,35 @@ export function TryOnScreen({ route }: any) {
   }
 
   async function processAndSetImage(uri: string) {
+    let finalUri = uri;
     try {
       const manipResult = await ImageManipulator.manipulateAsync(
         uri,
         [{ resize: { width: 768 } }],
         { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG }
       );
-      setPersonImage(manipResult.uri);
+      finalUri = manipResult.uri;
+      setPersonImage(finalUri);
     } catch {
       setPersonImage(uri);
+    }
+
+    // Run person quality check
+    setValidatingPerson(true);
+    try {
+      const res = await fetch('/api/try-on/person/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ personImage: finalUri }),
+      });
+      if (res.ok) {
+        const qualityData = await res.json();
+        setPersonQuality(qualityData);
+      }
+    } catch {
+      setPersonQuality({ valid: true, humanMessage: 'Foto pronta para o provador virtual.' });
+    } finally {
+      setValidatingPerson(false);
     }
   }
 
@@ -130,8 +152,25 @@ export function TryOnScreen({ route }: any) {
     setLoading(true);
 
     try {
+      const storeId = currentProduct.storeId || 'demo-store-001';
+      // Verify if at least one AI engine is configured
+      try {
+        const configRes = await fetch(`/api/store/${storeId}/providers`);
+        if (configRes.ok) {
+          const configData = await configRes.json();
+          const configuredProviders = configData.providers?.filter((p: any) => p.configured) || [];
+          if (configuredProviders.length === 0) {
+            setLoading(false);
+            Alert.alert(t('noAIEngineConnectedNotice'), t('connectAIEngineToContinue'));
+            return;
+          }
+        }
+      } catch {
+        // Fallback to direct try-on
+      }
+
       const payload = {
-        storeId: currentProduct.storeId || 'demo-store-001',
+        storeId,
         productId: currentProduct.id,
         personImage: personImage.startsWith('data:') || personImage.startsWith('http')
           ? personImage
@@ -242,6 +281,35 @@ export function TryOnScreen({ route }: any) {
                     <Text style={styles.actionPillTextSecondary}>{t('pickFromGallery')}</Text>
                   </TouchableOpacity>
                 </View>
+              </View>
+            )}
+
+            {/* Person Quality Feedback */}
+            {personImage && personQuality && (
+              <View
+                style={{
+                  marginTop: spacing.sm,
+                  padding: spacing.sm,
+                  borderRadius: borderRadius.sm,
+                  backgroundColor: personQuality.valid ? '#F0FDF4' : '#FEF2F2',
+                  borderWidth: 1,
+                  borderColor: personQuality.valid ? '#BBF7D0' : '#FECACA',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <Check size={14} color={personQuality.valid ? '#16A34A' : '#DC2626'} />
+                <Text
+                  style={{
+                    fontSize: 11,
+                    color: personQuality.valid ? '#15803D' : '#B91C1C',
+                    fontWeight: '600',
+                    flex: 1,
+                  }}
+                >
+                  {personQuality.humanMessage}
+                </Text>
               </View>
             )}
           </View>

@@ -1,16 +1,24 @@
 // server/services/GarmentPreparationService.ts
 import { CatalogService } from './CatalogService.js';
 import { StorageService } from './StorageService.js';
-import { GarmentPreparationResult, Product } from '../types/index.js';
+import { ImagePreparationService } from './ImagePreparationService.js';
+import { GarmentPreparationResult, GarmentPreparationMetadata, Product } from '../types/index.js';
+import { supabaseAdmin } from '../middleware/authMiddleware.js';
 import { logger } from '../utils/logger.js';
 
 export class GarmentPreparationService {
   private catalogService: CatalogService;
   private storageService: StorageService;
+  private imagePrepService: ImagePreparationService;
 
-  constructor(catalogService?: CatalogService, storageService?: StorageService) {
+  constructor(
+    catalogService?: CatalogService,
+    storageService?: StorageService,
+    imagePrepService?: ImagePreparationService
+  ) {
     this.catalogService = catalogService || new CatalogService();
     this.storageService = storageService || new StorageService();
+    this.imagePrepService = imagePrepService || ImagePreparationService.getInstance();
   }
 
   /**
@@ -69,10 +77,74 @@ export class GarmentPreparationService {
   }
 
   /**
-   * Pipeline: CATALOG IMAGE -> GARMENT PREPARATION -> TRY-ON REFERENCE
-   * Performs automatic segmentation / background removal when a model service is available.
-   * If no external segmentation engine is configured, strictly reports GARMENT_SEGMENTATION_NOT_IMPLEMENTED
-   * and preserves the explicit try_on_reference without arbitrary 2D cropping.
+   * Pipeline: CATALOG IMAGE -> VISUAL ANALYSIS -> ISOLATION / PREPARATION -> QUALITY GATE -> TRY-ON REFERENCE
+   * Performs automated visual preparation using Gemini Image Model (gemini-3.1-flash-image) or segmentation service.
+   * Saves the prepared reference as a distinct 'try_on_reference' entity without mutating the original catalog photo.
+   */
+  public async processProductGarmentPreparation(
+    productId: string,
+    storeId: string,
+    apiKeyOverride?: string
+  ): Promise<GarmentPreparationMetadata> {
+    const product = await this.catalogService.getProductById(productId);
+    if (!product) {
+      throw new Error(`PRODUCT_NOT_FOUND: Product with ID '${productId}' was not found.`);
+    }
+    if (product.storeId !== storeId) {
+      throw new Error(`STORE_MISMATCH: Product '${productId}' does not belong to store '${storeId}'.`);
+    }
+
+    const catalogPhoto = product.photos?.find(p => p.type === 'catalog') || product.photos?.[0];
+    if (!catalogPhoto?.storagePath) {
+      throw new Error('CATALOG_PHOTO_MISSING: Produto não possui foto de catálogo para preparação.');
+    }
+
+    let catalogImageUrl = catalogPhoto.storagePath;
+    if (!catalogImageUrl.startsWith('http://') && !catalogImageUrl.startsWith('https://')) {
+      catalogImageUrl = this.storageService.getPublicUrl(StorageService.BUCKET_PRODUCT_IMAGES, catalogImageUrl);
+    }
+
+    // Run intelligent garment preparation pipeline
+    const prepMeta = await this.imagePrepService.prepareGarment({
+      catalogImageUrl,
+      category: product.category,
+      productId: product.id,
+      storeId: product.storeId,
+      productName: product.name,
+      apiKey: apiKeyOverride,
+    });
+
+    if (prepMeta.status === 'ready' && prepMeta.preparedImageUrl) {
+      // Upsert prepared image as try_on_reference in database
+      try {
+        const existingRef = product.photos?.find(p => p.type === 'try_on_reference');
+        if (existingRef?.id) {
+          await supabaseAdmin
+            .from('product_photos')
+            .update({
+              storage_path: prepMeta.preparedImageUrl,
+            })
+            .eq('id', existingRef.id);
+        } else {
+          await supabaseAdmin.from('product_photos').insert({
+            product_id: product.id,
+            type: 'try_on_reference',
+            storage_path: prepMeta.preparedImageUrl,
+            sort_order: 1,
+          });
+        }
+      } catch (dbErr: any) {
+        logger.warn('[GarmentPreparation] Could not update product_photos table (offline/mock mode)', {
+          error: dbErr.message,
+        });
+      }
+    }
+
+    return prepMeta;
+  }
+
+  /**
+   * Legacy / Test compatibility method
    */
   public async prepareGarmentFromCatalog(
     productId: string,

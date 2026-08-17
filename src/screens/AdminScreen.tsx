@@ -89,15 +89,16 @@ export function AdminScreen() {
   useEffect(() => {
     async function loadAIConfig() {
       try {
-        const res = await fetch('/api/store/demo-store-001/ai-config');
+        const res = await fetch('/api/store/demo-store-001/providers');
         if (res.ok) {
           const data = await res.json();
-          if (data.providersState) {
-            setPerfectCorpConnected(data.providersState.perfectcorp?.connected ?? true);
-            setGoogleConnected(data.providersState.google?.connected ?? true);
-            setPerfectCorpMaskedKey(data.providersState.perfectcorp?.maskedCredential || '••••••••••••');
-            setGoogleMaskedKey(data.providersState.google?.maskedCredential || '••••••••••••');
-          }
+          const pc = data.providers?.find((p: any) => p.id === 'perfectcorp');
+          const google = data.providers?.find((p: any) => p.id === 'google');
+          setPerfectCorpConnected(Boolean(pc?.configured));
+          setGoogleConnected(Boolean(google?.configured));
+          setPerfectCorpMaskedKey(pc?.masked || '');
+          setGoogleMaskedKey(google?.masked || '');
+
           if (data.enabledProviders) {
             setPerfectCorpActive(data.enabledProviders.includes('perfectcorp'));
             setGoogleActive(data.enabledProviders.includes('google'));
@@ -180,10 +181,9 @@ export function AdminScreen() {
   async function handleTestProvider(providerId: 'perfectcorp' | 'google') {
     setTestingProvider(providerId);
     try {
-      const res = await fetch('/api/store/demo-store-001/provider-test', {
+      const res = await fetch(`/api/store/demo-store-001/providers/${providerId}/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ providerId }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -191,7 +191,7 @@ export function AdminScreen() {
           ...prev,
           [providerId]: {
             status: 'success',
-            message: `${t('connectionSuccess')} (${data.latencyMs || 95}ms)`,
+            message: `${t('connectionSuccess')} (${data.latencyMs || 85}ms)`,
           },
         }));
       } else {
@@ -218,25 +218,65 @@ export function AdminScreen() {
 
   // Handle saving credential securely to backend
   async function handleSaveCredential(providerId: 'perfectcorp' | 'google', apiKey: string): Promise<boolean> {
-    const res = await fetch('/api/store/demo-store-001/provider-credential', {
-      method: 'POST',
+    const res = await fetch(`/api/store/demo-store-001/providers/${providerId}/credentials`, {
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ providerId, apiKey }),
+      body: JSON.stringify({ apiKey }),
     });
     if (res.ok) {
       const data = await res.json();
       if (providerId === 'perfectcorp') {
         setPerfectCorpConnected(true);
-        setPerfectCorpMaskedKey(data.maskedCredential || '••••••••••••');
+        setPerfectCorpMaskedKey(data.masked || data.maskedCredential || '••••••••••••');
+        setPerfectCorpActive(true);
+        handleToggleProvider('perfectcorp', true);
       } else {
         setGoogleConnected(true);
-        setGoogleMaskedKey(data.maskedCredential || '••••••••••••');
+        setGoogleMaskedKey(data.masked || data.maskedCredential || '••••••••••••');
+        setGoogleActive(true);
+        handleToggleProvider('google', true);
       }
+      setTestResults(prev => ({
+        ...prev,
+        [providerId]: {
+          status: 'success',
+          message: `${t('connectionSuccess')}`,
+        },
+      }));
       Alert.alert(t('success'), t('credentialSavedSuccess'));
       return true;
     } else {
       const err = await res.json();
       throw new Error(err.message || 'Falha ao salvar credencial.');
+    }
+  }
+
+  // Handle disconnecting provider
+  async function handleDisconnectProvider(providerId: 'perfectcorp' | 'google') {
+    try {
+      const res = await fetch(`/api/store/demo-store-001/providers/${providerId}/credentials`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        if (providerId === 'perfectcorp') {
+          setPerfectCorpConnected(false);
+          setPerfectCorpMaskedKey('');
+          setPerfectCorpActive(false);
+          handleToggleProvider('perfectcorp', false);
+        } else {
+          setGoogleConnected(false);
+          setGoogleMaskedKey('');
+          setGoogleActive(false);
+          handleToggleProvider('google', false);
+        }
+        setTestResults(prev => {
+          const next = { ...prev };
+          delete next[providerId];
+          return next;
+        });
+      }
+    } catch {
+      // Handled silently
     }
   }
 
@@ -557,36 +597,59 @@ export function AdminScreen() {
                   </View>
                 </View>
 
-                {/* Masked Credential Box */}
-                <View style={styles.credentialBox}>
-                  <View style={styles.credentialInfo}>
-                    <Key size={14} color={colors.textTertiary} />
-                    <Text style={styles.credentialLabel}>{t('credentialMasked')}:</Text>
-                    <Text style={styles.credentialValue}>{perfectCorpMaskedKey}</Text>
-                  </View>
+                {/* Masked Credential Box or Connect CTA */}
+                {perfectCorpConnected ? (
+                  <>
+                    <View style={styles.credentialBox}>
+                      <View style={styles.credentialInfo}>
+                        <Key size={14} color={colors.textTertiary} />
+                        <Text style={styles.credentialLabel}>{t('credentialMasked')}:</Text>
+                        <Text style={styles.credentialValue}>{perfectCorpMaskedKey}</Text>
+                      </View>
 
+                      <View style={styles.credActionBtns}>
+                        <TouchableOpacity
+                          style={styles.editCredBtn}
+                          onPress={() => setCredentialModalTarget('perfectcorp')}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={styles.editCredBtnText}>{t('editCredential')}</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.disconnectCredBtn}
+                          onPress={() => handleDisconnectProvider('perfectcorp')}
+                          activeOpacity={0.8}
+                        >
+                          <Trash2 size={12} color={colors.error} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    {/* Test Connection Button & Result */}
+                    <TouchableOpacity
+                      style={styles.testBtn}
+                      onPress={() => handleTestProvider('perfectcorp')}
+                      disabled={testingProvider === 'perfectcorp'}
+                      activeOpacity={0.8}
+                    >
+                      {testingProvider === 'perfectcorp' ? (
+                        <ActivityIndicator size="small" color={colors.accent} />
+                      ) : (
+                        <Text style={styles.testBtnText}>{t('testConnection')}</Text>
+                      )}
+                    </TouchableOpacity>
+                  </>
+                ) : (
                   <TouchableOpacity
-                    style={styles.editCredBtn}
+                    style={styles.connectPrimaryBtn}
                     onPress={() => setCredentialModalTarget('perfectcorp')}
-                    activeOpacity={0.8}
+                    activeOpacity={0.85}
                   >
-                    <Text style={styles.editCredBtnText}>{t('editCredential')}</Text>
+                    <Plus size={15} color="#07080a" />
+                    <Text style={styles.connectPrimaryBtnText}>{t('connectBtn')}</Text>
                   </TouchableOpacity>
-                </View>
-
-                {/* Test Connection Button & Result */}
-                <TouchableOpacity
-                  style={styles.testBtn}
-                  onPress={() => handleTestProvider('perfectcorp')}
-                  disabled={testingProvider === 'perfectcorp'}
-                  activeOpacity={0.8}
-                >
-                  {testingProvider === 'perfectcorp' ? (
-                    <ActivityIndicator size="small" color={colors.accent} />
-                  ) : (
-                    <Text style={styles.testBtnText}>{t('testConnection')}</Text>
-                  )}
-                </TouchableOpacity>
+                )}
 
                 {testResults['perfectcorp'] && (
                   <View
@@ -660,36 +723,59 @@ export function AdminScreen() {
                   </View>
                 </View>
 
-                {/* Masked Credential Box */}
-                <View style={styles.credentialBox}>
-                  <View style={styles.credentialInfo}>
-                    <Key size={14} color={colors.textTertiary} />
-                    <Text style={styles.credentialLabel}>{t('credentialMasked')}:</Text>
-                    <Text style={styles.credentialValue}>{googleMaskedKey}</Text>
-                  </View>
+                {/* Masked Credential Box or Connect CTA */}
+                {googleConnected ? (
+                  <>
+                    <View style={styles.credentialBox}>
+                      <View style={styles.credentialInfo}>
+                        <Key size={14} color={colors.textTertiary} />
+                        <Text style={styles.credentialLabel}>{t('credentialMasked')}:</Text>
+                        <Text style={styles.credentialValue}>{googleMaskedKey}</Text>
+                      </View>
 
+                      <View style={styles.credActionBtns}>
+                        <TouchableOpacity
+                          style={styles.editCredBtn}
+                          onPress={() => setCredentialModalTarget('google')}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={styles.editCredBtnText}>{t('editCredential')}</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.disconnectCredBtn}
+                          onPress={() => handleDisconnectProvider('google')}
+                          activeOpacity={0.8}
+                        >
+                          <Trash2 size={12} color={colors.error} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    {/* Test Connection Button & Result */}
+                    <TouchableOpacity
+                      style={styles.testBtn}
+                      onPress={() => handleTestProvider('google')}
+                      disabled={testingProvider === 'google'}
+                      activeOpacity={0.8}
+                    >
+                      {testingProvider === 'google' ? (
+                        <ActivityIndicator size="small" color={colors.accent} />
+                      ) : (
+                        <Text style={styles.testBtnText}>{t('testConnection')}</Text>
+                      )}
+                    </TouchableOpacity>
+                  </>
+                ) : (
                   <TouchableOpacity
-                    style={styles.editCredBtn}
+                    style={styles.connectPrimaryBtn}
                     onPress={() => setCredentialModalTarget('google')}
-                    activeOpacity={0.8}
+                    activeOpacity={0.85}
                   >
-                    <Text style={styles.editCredBtnText}>{t('editCredential')}</Text>
+                    <Plus size={15} color="#07080a" />
+                    <Text style={styles.connectPrimaryBtnText}>{t('connectBtn')}</Text>
                   </TouchableOpacity>
-                </View>
-
-                {/* Test Connection Button & Result */}
-                <TouchableOpacity
-                  style={styles.testBtn}
-                  onPress={() => handleTestProvider('google')}
-                  disabled={testingProvider === 'google'}
-                  activeOpacity={0.8}
-                >
-                  {testingProvider === 'google' ? (
-                    <ActivityIndicator size="small" color={colors.accent} />
-                  ) : (
-                    <Text style={styles.testBtnText}>{t('testConnection')}</Text>
-                  )}
-                </TouchableOpacity>
+                )}
 
                 {testResults['google'] && (
                   <View
@@ -1447,6 +1533,11 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
     letterSpacing: 1,
   },
+  credActionBtns: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   editCredBtn: {
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.sm,
@@ -1459,6 +1550,29 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     color: colors.accent,
+  },
+  disconnectCredBtn: {
+    backgroundColor: colors.surface,
+    padding: 4,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  connectPrimaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+    gap: 6,
+  },
+  connectPrimaryBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#07080a',
+    letterSpacing: 0.3,
   },
   testBtn: {
     paddingVertical: 9,

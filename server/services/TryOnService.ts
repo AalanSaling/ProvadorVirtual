@@ -1,17 +1,24 @@
 // server/services/TryOnService.ts
 import { ProviderRegistry } from '../providers/registry/ProviderRegistry.js';
 import { StorageService } from './StorageService.js';
+import { StoreCredentialService } from './StoreCredentialService.js';
 import { supabaseAdmin } from '../middleware/authMiddleware.js';
-import { MultiProviderTryOnResponse, TryOnInput, TryOnResult } from '../types/index.js';
+import { MultiProviderTryOnResponse, TryOnInput, TryOnResult, ExecutionContext } from '../types/index.js';
 import { logger } from '../utils/logger.js';
 
 export class TryOnService {
   private registry: ProviderRegistry;
   private storageService: StorageService;
+  private credentialService: StoreCredentialService;
 
-  constructor() {
-    this.registry = ProviderRegistry.getInstance();
-    this.storageService = new StorageService();
+  constructor(
+    registry?: ProviderRegistry,
+    storageService?: StorageService,
+    credentialService?: StoreCredentialService
+  ) {
+    this.registry = registry || ProviderRegistry.getInstance();
+    this.storageService = storageService || new StorageService();
+    this.credentialService = credentialService || StoreCredentialService.getInstance();
   }
 
   /**
@@ -42,7 +49,7 @@ export class TryOnService {
 
   /**
    * Executes Virtual Try-On across N selected providers concurrently using Promise.allSettled.
-   * Does NOT accept 'both' as a special keyword — accepts selectedProviders: string[].
+   * Injects per-store credentials securely into provider execution context.
    */
   public async executeMultiProviderTryOn(
     input: TryOnInput,
@@ -73,10 +80,34 @@ export class TryOnService {
         }
       });
 
-      // 2. Execute all providers concurrently using Promise.allSettled
-      const executionPromises = providerInstances.map(provider =>
-        provider.generateTryOn(input)
-      );
+      // 2. Fetch credentials and build ExecutionContext per provider
+      const executionPromises = providerInstances.map(async provider => {
+        const storeApiKey = await this.credentialService.getCredential(input.storeId, provider.id);
+
+        if (!storeApiKey) {
+          logger.warn(`No credential found for store ${input.storeId} and provider ${provider.id}`);
+          const unconfiguredResult: TryOnResult = {
+            provider: provider.id,
+            status: 'failed',
+            resultImage: null,
+            providerTaskId: null,
+            errorCode: 'STORE_PROVIDER_CREDENTIAL_NOT_CONFIGURED',
+            errorMessage: `Credencial de API do provedor '${provider.name}' não configurada para a loja '${input.storeId}'. Conecte a chave no painel administrativo.`,
+            durationMs: Date.now() - startTime,
+          };
+          return unconfiguredResult;
+        }
+
+        const context: ExecutionContext = {
+          storeId: input.storeId,
+          providerId: provider.id,
+          storeApiKey,
+          userId: input.userId,
+          productId: input.productId,
+        };
+
+        return provider.generateTryOn(input, context);
+      });
 
       const settledResults = await Promise.allSettled(executionPromises);
 

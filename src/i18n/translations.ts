@@ -176,6 +176,11 @@ export interface Translations {
   statusUnconfigured: string;
   defaultEngineBadge: string;
   setAsMainEngineBtn: string;
+  connectBtn: string;
+  saveAndTestBtn: string;
+  disconnectBtn: string;
+  noAIEngineConnectedNotice: string;
+  connectAIEngineToContinue: string;
   credentialMasked: string;
   editCredential: string;
   testConnection: string;
@@ -411,6 +416,11 @@ export const translations: Record<LanguageCode, Translations> = {
     statusUnconfigured: 'Não conectado',
     defaultEngineBadge: 'PRINCIPAL',
     setAsMainEngineBtn: 'Definir como Principal',
+    connectBtn: 'Conectar',
+    saveAndTestBtn: 'Salvar e testar',
+    disconnectBtn: 'Desconectar',
+    noAIEngineConnectedNotice: 'Nenhum motor de IA conectado.',
+    connectAIEngineToContinue: 'Conecte um motor de IA para continuar.',
     credentialMasked: 'Credencial',
     editCredential: 'Editar credencial',
     testConnection: 'Testar conexão',
@@ -645,6 +655,11 @@ export const translations: Record<LanguageCode, Translations> = {
     statusUnconfigured: 'No conectado',
     defaultEngineBadge: 'PRINCIPAL',
     setAsMainEngineBtn: 'Definir como Principal',
+    connectBtn: 'Conectar',
+    saveAndTestBtn: 'Guardar y probar',
+    disconnectBtn: 'Desconectar',
+    noAIEngineConnectedNotice: 'Ningún motor de IA conectado.',
+    connectAIEngineToContinue: 'Conecte un motor de IA para continuar.',
     credentialMasked: 'Credencial',
     editCredential: 'Editar credencial',
     testConnection: 'Probar conexión',

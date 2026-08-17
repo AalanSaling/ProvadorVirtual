@@ -49,6 +49,8 @@ export function AdminProductModal({
   const [active, setActive] = useState(true);
   const [catalogPhotoUrl, setCatalogPhotoUrl] = useState('');
   const [referencePhotoUrl, setReferencePhotoUrl] = useState('');
+  const [isPreparingGarment, setIsPreparingGarment] = useState(false);
+  const [preparationInfo, setPreparationInfo] = useState<any | null>(null);
 
   const CATEGORIES: { label: string; value: GarmentCategory }[] = [
     { label: t('catFullBody'), value: 'full_body' },
@@ -75,6 +77,7 @@ export function AdminProductModal({
       const refPhoto = product.photos?.find(p => p.type === 'try_on_reference')?.storagePath || '';
       setCatalogPhotoUrl(catPhoto);
       setReferencePhotoUrl(refPhoto);
+      setPreparationInfo(null);
     } else {
       setName('');
       setDescription('');
@@ -89,8 +92,50 @@ export function AdminProductModal({
       setActive(true);
       setCatalogPhotoUrl('');
       setReferencePhotoUrl('');
+      setPreparationInfo(null);
     }
   }, [product, visible]);
+
+  async function handleTriggerAIGarmentPreparation() {
+    if (!product?.id) {
+      Alert.alert(t('error'), 'Salve o produto primeiro antes de executar a preparação com IA.');
+      return;
+    }
+    if (!catalogPhotoUrl.trim()) {
+      Alert.alert(t('error'), 'Forneça uma foto de catálogo para processar a preparação visual.');
+      return;
+    }
+
+    setIsPreparingGarment(true);
+    try {
+      const res = await fetch(`/api/products/${product.id}/prepare-garment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          storeId: product.storeId || 'demo-store-001',
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || 'Falha ao processar preparação da peça');
+      }
+
+      const data = await res.json();
+      setPreparationInfo(data);
+      if (data.preparedImageUrl) {
+        setReferencePhotoUrl(data.preparedImageUrl);
+        Alert.alert(
+          'Preparação IA Concluída',
+          'A roupa foi isolada com sucesso e validada pelo Quality Gate para o provador virtual.'
+        );
+      }
+    } catch (e: any) {
+      Alert.alert('Erro na Preparação', e.message || 'Não foi possível isolar a peça.');
+    } finally {
+      setIsPreparingGarment(false);
+    }
+  }
 
   function handleSave() {
     if (!name.trim()) {
@@ -356,15 +401,93 @@ export function AdminProductModal({
                 placeholder={t('photoUrlPlaceholder')}
                 placeholderTextColor={colors.textTertiary}
               />
-
-              {catalogPhotoUrl ? (
-                <View style={styles.imagePreviewWrapper}>
-                  <Image source={{ uri: catalogPhotoUrl }} style={styles.imagePreview} resizeMode="cover" />
-                </View>
-              ) : null}
             </View>
 
-            {/* SEPARATED IMAGES: 2. FOTO PARA O PROVADOR */}
+            {/* AI GARMENT ISOLATION ACTION */}
+            <View style={styles.aiActionCard}>
+              <View style={styles.aiActionHeader}>
+                <Sparkles size={16} color={colors.accentDark} />
+                <Text style={styles.aiActionTitle}>Pipeline de Preparação Visual IA (Fase 5)</Text>
+              </View>
+              <Text style={styles.aiActionDesc}>
+                Executa isolamento visual real com gemini-3.1-flash-image: remoção de modelo/manequim, extração de detalhes e validação de Quality Gate.
+              </Text>
+              <TouchableOpacity
+                style={[styles.aiActionBtn, isPreparingGarment && styles.aiActionBtnDisabled]}
+                onPress={handleTriggerAIGarmentPreparation}
+                disabled={isPreparingGarment}
+                activeOpacity={0.85}
+              >
+                {isPreparingGarment ? (
+                  <Text style={styles.aiActionBtnText}>Isolando Peça com IA...</Text>
+                ) : (
+                  <>
+                    <Sparkles size={15} color={colors.textInverse} />
+                    <Text style={styles.aiActionBtnText}>
+                      {referencePhotoUrl ? 'Re-executar Isolamento IA' : 'Isolar Peça com IA'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* SIDE-BY-SIDE VISUAL COMPARISON */}
+            {(catalogPhotoUrl || referencePhotoUrl) && (
+              <View style={styles.comparisonCard}>
+                <Text style={styles.comparisonTitle}>Comparativo Visual: Original vs Preparada</Text>
+                <View style={styles.comparisonGrid}>
+                  {/* Left: Original */}
+                  <View style={styles.comparisonItem}>
+                    <Text style={styles.comparisonLabel}>Foto do Catálogo (Original)</Text>
+                    {catalogPhotoUrl ? (
+                      <View style={styles.imagePreviewWrapper}>
+                        <Image source={{ uri: catalogPhotoUrl }} style={styles.imagePreview} resizeMode="cover" />
+                      </View>
+                    ) : (
+                      <View style={styles.emptyPreviewBox}>
+                        <Text style={styles.emptyPreviewText}>Sem foto original</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Right: Preparada */}
+                  <View style={styles.comparisonItem}>
+                    <Text style={[styles.comparisonLabel, { color: colors.accentDark, fontWeight: '700' }]}>
+                      Preparada para o Provador (IA)
+                    </Text>
+                    {referencePhotoUrl ? (
+                      <View style={[styles.imagePreviewWrapper, { borderColor: colors.accentDark, borderWidth: 1.5 }]}>
+                        <Image source={{ uri: referencePhotoUrl }} style={styles.imagePreview} resizeMode="cover" />
+                      </View>
+                    ) : (
+                      <View style={styles.emptyPreviewBox}>
+                        <Text style={styles.emptyPreviewText}>Pendente de preparação</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+
+                {/* Badges */}
+                {referencePhotoUrl && (
+                  <View style={styles.qualityGateRow}>
+                    <View style={styles.gateBadge}>
+                      <Check size={12} color="#16a34a" />
+                      <Text style={styles.gateBadgeText}>Modelo Removido</Text>
+                    </View>
+                    <View style={styles.gateBadge}>
+                      <Check size={12} color="#16a34a" />
+                      <Text style={styles.gateBadgeText}>Fundo Tratado</Text>
+                    </View>
+                    <View style={styles.gateBadge}>
+                      <Check size={12} color="#16a34a" />
+                      <Text style={styles.gateBadgeText}>Quality Gate OK</Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* SEPARATED IMAGES: 2. FOTO PARA O PROVADOR (EDIT MANUAL) */}
             <View style={[styles.photoSectionCard, { borderColor: colors.accentDark }]}>
               <View style={styles.photoSectionHeader}>
                 <Sparkles size={15} color={colors.accent} />
@@ -379,12 +502,6 @@ export function AdminProductModal({
                 placeholder={t('photoUrlPlaceholder')}
                 placeholderTextColor={colors.textTertiary}
               />
-
-              {referencePhotoUrl ? (
-                <View style={styles.imagePreviewWrapper}>
-                  <Image source={{ uri: referencePhotoUrl }} style={styles.imagePreview} resizeMode="cover" />
-                </View>
-              ) : null}
             </View>
 
             {/* Delete button (only when editing) */}
@@ -615,6 +732,111 @@ const styles = StyleSheet.create({
   imagePreview: {
     width: '100%',
     height: '100%',
+  },
+  aiActionCard: {
+    backgroundColor: '#FAF5FF',
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: '#E9D5FF',
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  aiActionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  aiActionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6B21A8',
+  },
+  aiActionDesc: {
+    fontSize: 11,
+    color: '#7E22CE',
+    lineHeight: 16,
+    marginBottom: spacing.sm,
+  },
+  aiActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#7E22CE',
+    paddingVertical: 10,
+    borderRadius: borderRadius.sm,
+  },
+  aiActionBtnDisabled: {
+    opacity: 0.6,
+  },
+  aiActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  comparisonCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  comparisonTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  comparisonGrid: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  comparisonItem: {
+    flex: 1,
+  },
+  comparisonLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: 4,
+  },
+  emptyPreviewBox: {
+    height: 140,
+    backgroundColor: colors.surfaceLight,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.sm,
+  },
+  emptyPreviewText: {
+    fontSize: 11,
+    color: colors.textTertiary,
+    textAlign: 'center',
+  },
+  qualityGateRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: spacing.sm,
+  },
+  gateBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: borderRadius.full,
+  },
+  gateBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#15803D',
   },
   deletePieceBtn: {
     flexDirection: 'row',

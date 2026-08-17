@@ -65,6 +65,41 @@ export function computeSha256(buffer: Buffer): string {
   return crypto.createHash('sha256').update(buffer).digest('hex');
 }
 
+export async function getImageMetadata(
+  imageInput: string
+): Promise<{ width: number; height: number; format: string; mimeType: string; sizeBytes: number }> {
+  try {
+    let buffer: Buffer;
+    if (imageInput.startsWith('data:')) {
+      const match = imageInput.match(/^data:([^;]+);base64,(.+)$/);
+      if (!match) {
+        return { width: 0, height: 0, format: 'unknown', mimeType: 'unknown', sizeBytes: 0 };
+      }
+      buffer = Buffer.from(match[2], 'base64');
+    } else if (imageInput.startsWith('http://') || imageInput.startsWith('https://')) {
+      const res = await fetch(imageInput);
+      if (!res.ok) {
+        return { width: 0, height: 0, format: 'unknown', mimeType: 'unknown', sizeBytes: 0 };
+      }
+      const arr = await res.arrayBuffer();
+      buffer = Buffer.from(arr);
+    } else {
+      buffer = Buffer.from(imageInput, 'base64');
+    }
+
+    const { format, mimeType, width, height } = parseImageBuffer(buffer);
+    return {
+      width,
+      height,
+      format,
+      mimeType,
+      sizeBytes: buffer.length,
+    };
+  } catch {
+    return { width: 0, height: 0, format: 'unknown', mimeType: 'unknown', sizeBytes: 0 };
+  }
+}
+
 export async function validateImageFromUrl(
   imageUrl: string,
   options: ImageValidationOptions

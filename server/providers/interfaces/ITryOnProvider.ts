@@ -1,5 +1,5 @@
 // server/providers/interfaces/ITryOnProvider.ts
-import { ProviderCapabilities, TryOnInput, TryOnResult } from '../../types/index.js';
+import { ProviderCapabilities, TryOnInput, TryOnResult, ExecutionContext } from '../../types/index.js';
 
 export interface ITryOnProvider {
   readonly id: string;
@@ -7,14 +7,17 @@ export interface ITryOnProvider {
   readonly capabilities: ProviderCapabilities;
 
   /**
-   * Validates if provider credentials / configuration are ready in backend environment.
+   * Validates if provider credentials / configuration are ready.
+   * Can receive explicit ExecutionContext or partial credentials for validation.
    */
-  validateConfiguration(): Promise<boolean>;
+  validateConfiguration(context?: Partial<ExecutionContext>): Promise<boolean>;
 
   /**
-   * Executes Virtual Try-On for the given input.
+   * Executes Virtual Try-On for the given input and execution context.
+   * Context provides the dynamic per-store API key (storeApiKey).
    * Input strictly follows: personImage (main subject) + garmentImage (garment reference).
    * Never falls back silently on error; returns error metadata in TryOnResult.
    */
-  generateTryOn(input: TryOnInput): Promise<TryOnResult>;
+  generateTryOn(input: TryOnInput, context?: ExecutionContext): Promise<TryOnResult>;
 }
+

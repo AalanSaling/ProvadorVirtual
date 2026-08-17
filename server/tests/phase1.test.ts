@@ -3,11 +3,16 @@ import assert from 'node:assert';
 import { ProviderRegistry } from '../providers/registry/ProviderRegistry.js';
 import { MockPerfectCorpProvider } from '../providers/mocks/MockPerfectCorpProvider.js';
 import { MockGoogleGeminiProvider } from '../providers/mocks/MockGoogleGeminiProvider.js';
+import { StoreCredentialService } from '../services/StoreCredentialService.js';
 import { TryOnService } from '../services/TryOnService.js';
 import { TryOnInput } from '../types/index.js';
 
 async function runPhase1Tests() {
   console.log('🧪 Starting Phase 1 Foundation Test Suite...\n');
+
+  const credentialService = StoreCredentialService.getInstance();
+  await credentialService.setCredential('demo-store-001', 'perfectcorp', 'mock-pc-test-key-1234');
+  await credentialService.setCredential('demo-store-001', 'google', 'mock-google-test-key-5678');
 
   const registry = ProviderRegistry.getInstance();
   registry.reset();

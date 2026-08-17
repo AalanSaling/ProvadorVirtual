@@ -39,6 +39,14 @@ export interface MultiProviderTryOnResponse {
   timestamp: string;
 }
 
+export interface ExecutionContext {
+  storeId: string;
+  providerId: string;
+  storeApiKey: string;
+  userId?: string;
+  productId?: string;
+}
+
 export interface StoreProviderConfig {
   storeId: string;
   enabledProviders: string[];
@@ -115,4 +123,89 @@ export interface GarmentPreparationResult {
 export interface AuthenticatedRequest extends Request {
   user?: UserSession;
   storeRole?: StoreRole;
+}
+
+export interface GarmentVisualAnalysis {
+  hasModelOrPerson: boolean;
+  hasMannequin: boolean;
+  hasComplexBackground: boolean;
+  hasMultipleGarments: boolean;
+  isPartiallyHidden: boolean;
+  isCropped: boolean;
+  hasOverlappingClothing: boolean;
+  hasBackgroundTextOrLogo: boolean;
+  hasReflectionsOrHarshShadows: boolean;
+  isSharp: boolean;
+  garmentType: string;
+  category: GarmentCategory;
+  length?: string;
+  sleeves?: string;
+  neckline?: string;
+  primaryColor: string;
+  secondaryColors?: string[];
+  pattern?: string;
+  texture?: string;
+  details?: string[];
+  rawSummary?: string;
+}
+
+export interface GarmentQualityGateResult {
+  passed: boolean;
+  hasSingleGarment: boolean;
+  modelRemoved: boolean;
+  cleanBackground: boolean;
+  minResolutionPassed: boolean;
+  decodableFormat: boolean;
+  colorPreserved: boolean;
+  detailsPreserved: boolean;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+}
+
+export interface PersonQualityCheckResult {
+  valid: boolean;
+  isSharp: boolean;
+  isSinglePerson: boolean;
+  framing: 'full_body' | 'upper_body' | 'too_close' | 'too_far' | 'unknown';
+  faceVisible: boolean;
+  lightingAdequate: boolean;
+  poseAdequate: boolean;
+  humanMessage: string;
+  errorCode?: string | null;
+}
+
+export type GarmentPreparationStatus = 'pending' | 'processing' | 'ready' | 'failed';
+
+export interface GarmentPreparationMetadata {
+  status: GarmentPreparationStatus;
+  version: string;
+  model: string;
+  originalImageUrl: string;
+  preparedImageUrl: string | null;
+  analysis: GarmentVisualAnalysis | null;
+  qualityGate: GarmentQualityGateResult | null;
+  updatedAt: string;
+}
+
+export interface PersonTryOnContext {
+  subject: 'single_person';
+  identityPreservation: 'exact';
+  posePreservation: 'exact';
+  facePreservation: 'exact';
+  bodyProportionsPreservation: 'exact';
+  hairPreservation: 'exact';
+  lightingPreservation: 'coherent';
+  backgroundPreservation: 'coherent';
+  clothingReplacement: 'only_selected_garment';
+}
+
+export interface GarmentTryOnContext {
+  category: GarmentCategory;
+  garmentType?: string;
+  primaryColor?: string;
+  pattern?: string;
+  sleeves?: string;
+  neckline?: string;
+  texture?: string;
+  keyDetails?: string[];
 }

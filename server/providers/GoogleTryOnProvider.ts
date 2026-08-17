@@ -1,7 +1,8 @@
 // server/providers/GoogleTryOnProvider.ts
 import { GoogleGenAI } from '@google/genai';
 import { ITryOnProvider } from './interfaces/ITryOnProvider.js';
-import { ProviderCapabilities, TryOnInput, TryOnResult } from '../types/index.js';
+import { ProviderCapabilities, TryOnInput, TryOnResult, ExecutionContext } from '../types/index.js';
+import { PromptBuilder } from '../services/PromptBuilder.js';
 
 export class GoogleTryOnProvider implements ITryOnProvider {
   readonly id = 'google';
@@ -13,8 +14,8 @@ export class GoogleTryOnProvider implements ITryOnProvider {
     shoes: true,
   };
 
-  public async validateConfiguration(): Promise<boolean> {
-    const key = this.getApiKey();
+  public async validateConfiguration(context?: Partial<ExecutionContext>): Promise<boolean> {
+    const key = context?.storeApiKey || this.getApiKey();
     return Boolean(key);
   }
 
@@ -67,9 +68,9 @@ export class GoogleTryOnProvider implements ITryOnProvider {
     throw new Error(`${labelName}: Imagem fornecida deve ser Data URI base64 ou URL HTTP(S).`);
   }
 
-  async generateTryOn(input: TryOnInput): Promise<TryOnResult> {
+  async generateTryOn(input: TryOnInput, context?: ExecutionContext): Promise<TryOnResult> {
     const startTime = Date.now();
-    const apiKey = this.getApiKey();
+    const apiKey = context?.storeApiKey || this.getApiKey();
 
     if (!apiKey) {
       return {
@@ -79,7 +80,7 @@ export class GoogleTryOnProvider implements ITryOnProvider {
         providerTaskId: null,
         durationMs: Date.now() - startTime,
         errorCode: 'GOOGLE_AUTH_ERROR',
-        errorMessage: 'Chave de API do Google Gemini (GOOGLE_API_KEY) não configurada nos segredos do servidor.',
+        errorMessage: `STORE_PROVIDER_CREDENTIAL_NOT_CONFIGURED: Chave de API do Google Gemini não configurada para a loja ${context?.storeId || input.storeId}.`,
       };
     }
 
@@ -90,6 +91,7 @@ export class GoogleTryOnProvider implements ITryOnProvider {
       const personPartData = await this.prepareImagePart(input.personImage, 'Foto da pessoa (SUJEITO PRINCIPAL)');
       const garmentPartData = await this.prepareImagePart(input.garmentImage, 'Foto da roupa (OBJETO)');
 
+      // Initialize per-request client instance with the store-specific API key
       const ai = new GoogleGenAI({
         apiKey,
         httpOptions: {
@@ -99,30 +101,20 @@ export class GoogleTryOnProvider implements ITryOnProvider {
         },
       });
 
-      // Strict, explicit instruction prompt for Gemini image generation/editing
-      const promptText = `
-Você é um motor especializado em Provador Virtual de Roupas (Virtual Try-On fotorealista).
-
-IMPORTANTE - REGRAS E SEMÂNTICA RÍGIDA:
-1. A PRIMEIRA IMAGEM É A PESSOA (SUJEITO PRINCIPAL DO PROVADOR VIRTUAL).
-2. A SEGUNDA IMAGEM É A ROUPA (OBJETO A SER VESTIDO NELA).
-3. NUNCA INVERTA AS IMAGENS OU AS FUNÇÕES DA PESSOA E DA ROUPA.
-
-INSTRUÇÕES OBRIGATÓRIAS:
-- A PESSOA É O SUJEITO PRINCIPAL. A ROUPA É O OBJETO A SER VESTIDO NELA.
-- Preserve integralmente a identidade visual da pessoa: mantenha exatamente o mesmo rosto, feição, cabelo, tom de pele e expressão.
-- Preserve a pose da pessoa, o formato do corpo e as proporções físicas originais.
-- Vista a pessoa com a roupa fornecida na segunda imagem.
-- A roupa deve se adaptar perfeitamente ao corpo da pessoa de maneira fluida, natural e com dobras/caimento realistas.
-- Preserve o design, a cor, a estampa, o padrão, os detalhes de costura e a textura original da peça de roupa.
-- Mantenha a iluminação, sombras e o fundo da foto da pessoa coerentes e naturais.
-- NÃO coloque a pessoa dentro do cenário da foto da roupa.
-- NÃO crie uma colagem ou montagem de lado a lado.
-- NÃO aplique a roupa como se fosse um adesivo ou textura plana sobre a foto.
-- NÃO crie pessoas extras nem altere o sexo, idade ou fisionomia da pessoa.
-- NÃO invente outra roupa que não seja a peça de referência fornecida.
-- O resultado DEVE ser uma única fotografia de alta resolução da pessoa vestindo a roupa especificada (${input.garmentCategory || 'vestuário'}).
-`.trim();
+      // Strict, centralized, versioned instruction prompt for Gemini image generation/editing
+      const promptText = PromptBuilder.buildTryOnPrompt(input.garmentCategory, {
+        subject: 'single_person',
+        identityPreservation: 'exact',
+        posePreservation: 'exact',
+        facePreservation: 'exact',
+        bodyProportionsPreservation: 'exact',
+        hairPreservation: 'exact',
+        lightingPreservation: 'coherent',
+        backgroundPreservation: 'coherent',
+        clothingReplacement: 'only_selected_garment',
+      }, {
+        category: input.garmentCategory,
+      });
 
       const response = await ai.models.generateContent({
         model: modelName,

@@ -2,11 +2,13 @@
 import { Router, Response } from 'express';
 import { requireAuth, requireStoreAdmin } from '../middleware/authMiddleware.js';
 import { CatalogService } from '../services/CatalogService.js';
+import { GarmentPreparationService } from '../services/GarmentPreparationService.js';
 import { AuthenticatedRequest, Product } from '../types/index.js';
 import { logger } from '../utils/logger.js';
 
 export const catalogRouter = Router();
 const catalogService = new CatalogService();
+const garmentPrepService = new GarmentPreparationService();
 
 // Get active products for a store
 catalogRouter.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
@@ -37,6 +39,28 @@ catalogRouter.get('/:id', requireAuth, async (req: AuthenticatedRequest, res: Re
   } catch (err) {
     logger.error('Error in GET /api/products/:id', err);
     res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: 'Failed to fetch product.' });
+  }
+});
+
+// Admin: Process garment visual preparation (model removal, isolation, quality gate)
+catalogRouter.post('/:id/prepare-garment', requireAuth, requireStoreAdmin, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const productId = req.params.id;
+    const storeId = req.body.storeId || (req.query.storeId as string);
+
+    if (!storeId) {
+      res.status(400).json({ error: 'BAD_REQUEST', message: 'storeId is required.' });
+      return;
+    }
+
+    const prepMetadata = await garmentPrepService.processProductGarmentPreparation(productId, storeId);
+    res.json(prepMetadata);
+  } catch (err: any) {
+    logger.error('Error in POST /api/products/:id/prepare-garment', err);
+    res.status(500).json({
+      error: err?.code || 'GARMENT_PREPARATION_ERROR',
+      message: err instanceof Error ? err.message : 'Falha ao processar preparação visual da peça.',
+    });
   }
 });
 
