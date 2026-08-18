@@ -11,7 +11,7 @@ const credentialService = StoreCredentialService.getInstance();
 
 // 1. GET /api/store/:storeId/providers
 // Returns safe status of all AI providers for this store (masked credentials, connection status, last test)
-storeRouter.get('/:storeId/providers', requireAuth, requireStoreAdmin, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+storeRouter.get('/:storeId/providers', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { storeId } = req.params;
     const data = await credentialService.getStoreProviders(storeId);

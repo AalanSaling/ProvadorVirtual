@@ -60,6 +60,8 @@ export function AdminScreen() {
   const [productModalVisible, setProductModalVisible] = useState(false);
   const [catalogSearch, setCatalogSearch] = useState('');
 
+  const currentStoreId = products[0]?.storeId || 'store-atelier-01';
+
   // Store settings state
   const [storeName, setStoreName] = useState('ATELIER MAISON');
   const [storeSubtitle, setStoreSubtitle] = useState('PROVADOR VIRTUAL IA');
@@ -89,7 +91,7 @@ export function AdminScreen() {
   useEffect(() => {
     async function loadAIConfig() {
       try {
-        const res = await fetch('/api/store/demo-store-001/providers');
+        const res = await fetch(`/api/store/${currentStoreId}/providers`);
         if (res.ok) {
           const data = await res.json();
           const pc = data.providers?.find((p: any) => p.id === 'perfectcorp');
@@ -112,7 +114,7 @@ export function AdminScreen() {
       }
     }
     loadAIConfig();
-  }, []);
+  }, [currentStoreId]);
 
   useEffect(() => {
     if (products.length > 0 && !products.some(p => p.id === diagnosticSelectedProduct?.id)) {
@@ -123,7 +125,7 @@ export function AdminScreen() {
   // Handle saving AI Provider configuration to backend
   async function persistAIConfig(enabled: string[], primary: 'perfectcorp' | 'google' | null) {
     try {
-      await fetch('/api/store/demo-store-001/ai-config', {
+      await fetch(`/api/store/${currentStoreId}/ai-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -181,7 +183,7 @@ export function AdminScreen() {
   async function handleTestProvider(providerId: 'perfectcorp' | 'google') {
     setTestingProvider(providerId);
     try {
-      const res = await fetch(`/api/store/demo-store-001/providers/${providerId}/test`, {
+      const res = await fetch(`/api/store/${currentStoreId}/providers/${providerId}/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
@@ -218,7 +220,7 @@ export function AdminScreen() {
 
   // Handle saving credential securely to backend
   async function handleSaveCredential(providerId: 'perfectcorp' | 'google', apiKey: string): Promise<boolean> {
-    const res = await fetch(`/api/store/demo-store-001/providers/${providerId}/credentials`, {
+    const res = await fetch(`/api/store/${currentStoreId}/providers/${providerId}/credentials`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ apiKey }),
@@ -254,7 +256,7 @@ export function AdminScreen() {
   // Handle disconnecting provider
   async function handleDisconnectProvider(providerId: 'perfectcorp' | 'google') {
     try {
-      const res = await fetch(`/api/store/demo-store-001/providers/${providerId}/credentials`, {
+      const res = await fetch(`/api/store/${currentStoreId}/providers/${providerId}/credentials`, {
         method: 'DELETE',
       });
       if (res.ok) {
@@ -294,7 +296,7 @@ export function AdminScreen() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          storeId: prod.storeId || 'demo-store-001',
+          storeId: prod.storeId || currentStoreId,
           productId: prod.id,
           personImage: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=1024&q=80',
         }),

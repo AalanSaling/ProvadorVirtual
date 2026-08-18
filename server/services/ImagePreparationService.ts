@@ -182,9 +182,24 @@ export class ImagePreparationService {
    */
   public async validateGarmentQuality(
     originalUrl: string,
-    preparedUrl: string,
+    preparedUrl: string | null,
     analysis?: GarmentVisualAnalysis | null
   ): Promise<GarmentQualityGateResult> {
+    if (!preparedUrl) {
+      return {
+        passed: false,
+        hasSingleGarment: false,
+        modelRemoved: false,
+        cleanBackground: false,
+        minResolutionPassed: false,
+        decodableFormat: false,
+        colorPreserved: false,
+        detailsPreserved: false,
+        errorCode: 'GARMENT_PREPARATION_FAILED',
+        errorMessage: 'A preparação por IA não produziu uma imagem isolada da peça.',
+      };
+    }
+
     try {
       const meta = await getImageMetadata(preparedUrl);
 
@@ -209,13 +224,13 @@ export class ImagePreparationService {
       if (!minResolutionPassed) {
         return {
           passed: false,
-          hasSingleGarment: true,
-          modelRemoved: true,
-          cleanBackground: true,
+          hasSingleGarment: false,
+          modelRemoved: analysis?.hasModelOrPerson ? false : true,
+          cleanBackground: false,
           minResolutionPassed: false,
           decodableFormat,
           colorPreserved: true,
-          detailsPreserved: true,
+          detailsPreserved: false,
           errorCode: 'GARMENT_PREPARATION_FAILED',
           errorMessage: `Resolução da imagem preparada (${meta.width}x${meta.height}px) é inferior ao mínimo de 512x384px.`,
         };
@@ -224,15 +239,31 @@ export class ImagePreparationService {
       if (!decodableFormat) {
         return {
           passed: false,
-          hasSingleGarment: true,
-          modelRemoved: true,
-          cleanBackground: true,
+          hasSingleGarment: false,
+          modelRemoved: analysis?.hasModelOrPerson ? false : true,
+          cleanBackground: false,
           minResolutionPassed: true,
           decodableFormat: false,
           colorPreserved: true,
-          detailsPreserved: true,
+          detailsPreserved: false,
           errorCode: 'GARMENT_PREPARATION_FAILED',
           errorMessage: `Formato de imagem preparado inválido (${meta.mimeType}). Exigido JPEG ou PNG.`,
+        };
+      }
+
+      // Check if prepared image is identical to catalog original image (which means no isolation occurred)
+      if (preparedUrl === originalUrl) {
+        return {
+          passed: false,
+          hasSingleGarment: analysis?.hasMultipleGarments ? false : true,
+          modelRemoved: analysis?.hasModelOrPerson ? false : true,
+          cleanBackground: analysis?.hasComplexBackground ? false : true,
+          minResolutionPassed: true,
+          decodableFormat: true,
+          colorPreserved: true,
+          detailsPreserved: true,
+          errorCode: 'GARMENT_PREPARATION_FAILED',
+          errorMessage: 'Imagem preparada não pode ser idêntica à foto do catálogo.',
         };
       }
 
@@ -330,20 +361,36 @@ export class ImagePreparationService {
       }
     }
 
-    // Fallback: If AI image generation was not enabled or returned text, store catalog reference with quality gate check
+    // Step 3: Garment Quality Gate - STRICT: No fallback to catalogImageUrl
+    let qualityGate: GarmentQualityGateResult;
+
     if (!preparedImageUrl) {
-      preparedImageUrl = input.catalogImageUrl;
-    }
-
-    // Step 3: Garment Quality Gate
-    const qualityGate = await this.validateGarmentQuality(input.catalogImageUrl, preparedImageUrl, analysis);
-
-    if (!qualityGate.passed) {
       status = 'failed';
-      logger.error('[ImagePreparation] Garment preparation failed quality gate', {
-        errorCode: qualityGate.errorCode,
-        errorMessage: qualityGate.errorMessage,
+      qualityGate = {
+        passed: false,
+        hasSingleGarment: false,
+        modelRemoved: false,
+        cleanBackground: false,
+        minResolutionPassed: false,
+        decodableFormat: false,
+        colorPreserved: false,
+        detailsPreserved: false,
+        errorCode: 'GARMENT_PREPARATION_FAILED',
+        errorMessage: 'A preparação por IA não produziu uma imagem isolada válida da peça.',
+      };
+      logger.error('[ImagePreparation] Garment preparation failed: no prepared image produced.', {
+        productId: input.productId,
       });
+    } else {
+      qualityGate = await this.validateGarmentQuality(input.catalogImageUrl, preparedImageUrl, analysis);
+      if (!qualityGate.passed) {
+        status = 'failed';
+        preparedImageUrl = null;
+        logger.error('[ImagePreparation] Garment preparation failed quality gate', {
+          errorCode: qualityGate.errorCode,
+          errorMessage: qualityGate.errorMessage,
+        });
+      }
     }
 
     const metadata: GarmentPreparationMetadata = {
@@ -471,17 +518,17 @@ Return a STRICT JSON object without markdown fences:
           errorCode: isValid ? null : 'PERSON_QUALITY_CHECK_FAILED',
         };
       } catch (aiErr: any) {
-        logger.warn('[ImagePreparation] AI person quality check fallback to local check', { error: aiErr.message });
+        logger.warn('[ImagePreparation] AI person quality check failed', { error: aiErr.message });
         return {
-          valid: true,
-          isSharp: true,
-          isSinglePerson: true,
-          framing: 'full_body',
-          faceVisible: true,
-          lightingAdequate: true,
-          poseAdequate: true,
-          humanMessage: 'Foto aprovada para o provador virtual.',
-          errorCode: null,
+          valid: false,
+          isSharp: false,
+          isSinglePerson: false,
+          framing: 'unknown',
+          faceVisible: false,
+          lightingAdequate: false,
+          poseAdequate: false,
+          humanMessage: 'Não foi possível verificar sua foto automaticamente. Tente novamente com uma foto nítida e bem iluminada.',
+          errorCode: 'PERSON_QUALITY_CHECK_FAILED',
         };
       }
     } catch (err: any) {

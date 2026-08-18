@@ -41,6 +41,8 @@ export function TryOnScreen({ route }: any) {
   const [resultModalVisible, setResultModalVisible] = useState(false);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [activeResult, setActiveResult] = useState<TryOnResult | null>(null);
+  const [storeProviders, setStoreProviders] = useState<{ id: string; name: string; configured: boolean }[]>([]);
+  const [selectedProviders, setSelectedProviders] = useState<string[]>([]);
 
   // If a product is passed through route navigation (from Catalog)
   useEffect(() => {
@@ -52,6 +54,57 @@ export function TryOnScreen({ route }: any) {
   // Filter available active products for try on
   const availableProducts = products.filter(p => p.active !== false);
   const currentProduct = selectedTryOnProduct;
+
+  // Load configured providers dynamically for the selected product's store
+  useEffect(() => {
+    let isMounted = true;
+    async function loadStoreProviders() {
+      if (!currentProduct?.storeId) {
+        if (isMounted) {
+          setStoreProviders([]);
+          setSelectedProviders([]);
+        }
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/store/${currentProduct.storeId}/providers`);
+        if (res.ok) {
+          const data = await res.json();
+          const configured = (data.providers || []).filter((p: any) => p.configured);
+          if (isMounted) {
+            setStoreProviders(configured);
+            if (configured.length > 0) {
+              const defaultP = configured.find((p: any) => p.id === data.defaultProvider);
+              setSelectedProviders(defaultP ? [defaultP.id] : [configured[0].id]);
+            } else {
+              setSelectedProviders([]);
+            }
+          }
+        }
+      } catch (err) {
+        if (isMounted) {
+          setStoreProviders([]);
+          setSelectedProviders([]);
+        }
+      }
+    }
+
+    loadStoreProviders();
+    return () => {
+      isMounted = false;
+    };
+  }, [currentProduct?.storeId]);
+
+  function toggleProvider(providerId: string) {
+    setSelectedProviders(prev => {
+      if (prev.includes(providerId)) {
+        return prev.filter(id => id !== providerId);
+      } else {
+        return [...prev, providerId];
+      }
+    });
+  }
 
   // Pick image from gallery
   async function pickImageFromGallery() {
@@ -121,9 +174,17 @@ export function TryOnScreen({ route }: any) {
       if (res.ok) {
         const qualityData = await res.json();
         setPersonQuality(qualityData);
+      } else {
+        setPersonQuality({
+          valid: false,
+          humanMessage: 'Não foi possível verificar sua foto. Tente novamente com uma foto nítida e bem iluminada.',
+        });
       }
     } catch {
-      setPersonQuality({ valid: true, humanMessage: 'Foto pronta para o provador virtual.' });
+      setPersonQuality({
+        valid: false,
+        humanMessage: 'Não foi possível verificar sua foto. Tente novamente.',
+      });
     } finally {
       setValidatingPerson(false);
     }
@@ -136,8 +197,19 @@ export function TryOnScreen({ route }: any) {
       return;
     }
 
+    if (personQuality && !personQuality.valid) {
+      Alert.alert(t('error') || 'Foto inválida', personQuality.humanMessage || 'Não foi possível verificar sua foto. Tente novamente.');
+      return;
+    }
+
     if (!currentProduct) {
       Alert.alert(t('garmentMissingAlertTitle'), t('garmentMissingAlertMsg'));
+      return;
+    }
+
+    const storeId = currentProduct.storeId;
+    if (!storeId) {
+      Alert.alert(t('error') || 'Erro', 'Não foi possível identificar a loja desta peça.');
       return;
     }
 
@@ -148,32 +220,22 @@ export function TryOnScreen({ route }: any) {
       return;
     }
 
+    if (selectedProviders.length === 0) {
+      Alert.alert(
+        t('noAIEngineConnectedNotice') || 'Nenhum motor de IA selecionado',
+        'Selecione ou configure ao menos um motor de IA ativo para esta loja.'
+      );
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const storeId = currentProduct.storeId || 'demo-store-001';
-
-      // Verify if at least one AI engine is configured
-      try {
-        const configRes = await fetch(`/api/store/${storeId}/providers`);
-        if (configRes.ok) {
-          const configData = await configRes.json();
-          const configuredProviders = configData.providers?.filter((p: any) => p.configured) || [];
-          if (configuredProviders.length === 0) {
-            setLoading(false);
-            Alert.alert(t('noAIEngineConnectedNotice'), t('connectAIEngineToContinue'));
-            return;
-          }
-        }
-      } catch {
-        // Proceed to try-on
-      }
-
       const payload = {
         storeId,
         productId: currentProduct.id,
         personImage,
-        selectedProviders: ['perfectcorp'],
+        selectedProviders,
       };
 
       const response = await fetch('/api/try-on/generate', {
@@ -384,6 +446,55 @@ export function TryOnScreen({ route }: any) {
                 <Text style={styles.noSelectionText}>
                   {t('garmentMissingAlertMsg')}
                 </Text>
+              </View>
+            )}
+
+            {/* AI Providers Selection */}
+            {currentProduct && (
+              <View style={styles.providerSection}>
+                <Text style={styles.providerSectionTitle}>Motores de IA da Loja</Text>
+                {storeProviders.length > 0 ? (
+                  <View style={styles.providerPillsRow}>
+                    {storeProviders.map(p => {
+                      const isSelected = selectedProviders.includes(p.id);
+                      return (
+                        <TouchableOpacity
+                          key={p.id}
+                          style={[
+                            styles.providerPill,
+                            isSelected && styles.providerPillActive,
+                          ]}
+                          onPress={() => toggleProvider(p.id)}
+                          activeOpacity={0.8}
+                        >
+                          <View
+                            style={[
+                              styles.providerCheckbox,
+                              isSelected && styles.providerCheckboxActive,
+                            ]}
+                          >
+                            {isSelected && <Check size={10} color={colors.textInverse} />}
+                          </View>
+                          <Text
+                            style={[
+                              styles.providerPillText,
+                              isSelected && styles.providerPillTextActive,
+                            ]}
+                          >
+                            {p.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <View style={styles.noProvidersWarning}>
+                    <AlertTriangle size={12} color="#D97706" />
+                    <Text style={styles.noProvidersWarningText}>
+                      Nenhum motor de IA conectado para esta loja. Configure chaves no painel admin.
+                    </Text>
+                  </View>
+                )}
               </View>
             )}
           </View>
@@ -693,5 +804,75 @@ const styles = StyleSheet.create({
   noSelectionText: {
     fontSize: 12,
     color: colors.textSecondary,
+  },
+  providerSection: {
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderLight,
+  },
+  providerSectionTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  providerPillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  providerPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  providerPillActive: {
+    backgroundColor: colors.accentGlow,
+    borderColor: colors.accent,
+  },
+  providerCheckbox: {
+    width: 14,
+    height: 14,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  providerCheckboxActive: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  providerPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  providerPillTextActive: {
+    color: colors.accent,
+    fontWeight: '700',
+  },
+  noProvidersWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    padding: spacing.xs,
+    borderRadius: borderRadius.sm,
+    backgroundColor: '#FEF3C7',
+  },
+  noProvidersWarningText: {
+    fontSize: 10,
+    color: '#92400E',
+    fontWeight: '600',
   },
 });

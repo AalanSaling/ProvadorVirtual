@@ -185,9 +185,19 @@ tryOnRouter.get('/results/download', (req, res): void => {
 tryOnRouter.all('/diagnostic/input-check', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const params = (req.method === 'POST' ? req.body : req.query) || {};
-    const storeId = params.storeId || 'demo-store-001';
-    const productId = params.productId || 'prod-001';
+    const storeId = params.storeId;
+    const productId = params.productId;
     const personImage = params.personImage || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=1024&q=80';
+
+    if (!storeId) {
+      res.status(400).json({ error: 'BAD_REQUEST', message: 'storeId is required for diagnostic inspection.' });
+      return;
+    }
+
+    if (!productId) {
+      res.status(400).json({ error: 'BAD_REQUEST', message: 'productId is required for diagnostic inspection.' });
+      return;
+    }
 
     const garmentRefInfo = await garmentPrepService.getGarmentReferenceForProduct(productId, storeId);
     const { referenceUrl: garmentImage, product, catalogImageUrl } = garmentRefInfo;
@@ -346,9 +356,20 @@ tryOnRouter.all('/diagnostic/perfectcorp', async (req: AuthenticatedRequest, res
       return;
     }
 
-    const storeId = body.storeId || 'demo-store-001';
-    const productId = body.productId || 'prod-001';
+    const storeId = body.storeId;
+    const productId = body.productId;
     const personImage = body.personImage || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=1024&q=80';
+
+    if (!storeId || !productId) {
+      res.status(400).json({
+        provider: 'perfectcorp',
+        task_id: null,
+        status: 'failed',
+        duration_ms: 0,
+        error_message: 'storeId and productId are required.',
+      });
+      return;
+    }
 
     const { referenceUrl: garmentImage, product, catalogImageUrl } = await garmentPrepService.getGarmentReferenceForProduct(productId, storeId);
 

@@ -5,7 +5,7 @@ import { Product, GarmentCategory } from '../types';
 export const INITIAL_PRODUCTS: Product[] = [
   {
     id: 'prod-001',
-    storeId: 'demo-store-001',
+    storeId: 'store-atelier-01',
     name: 'Vestido Midi Floral Primavera',
     description: 'Vestido midi confeccionado em viscose leve e fluída, decote sutil em V e estampa floral exclusiva pintada à mão.',
     category: 'full_body',
@@ -31,7 +31,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 'prod-002',
-    storeId: 'demo-store-001',
+    storeId: 'store-atelier-01',
     name: 'Camiseta Oversized Streetwear',
     description: 'Camiseta premium em algodão Pima peruano de alta gramatura com caimento estruturado e gola canelada.',
     category: 'upper_body',
@@ -57,7 +57,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 'prod-003',
-    storeId: 'demo-store-001',
+    storeId: 'store-atelier-01',
     name: 'Calça Jeans Wide Leg Vintage',
     description: 'Calça jeans cintura alta com modelagem ampla wide leg e lavagem vintage especial com toque macio.',
     category: 'lower_body',
@@ -83,7 +83,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 'prod-004',
-    storeId: 'demo-store-001',
+    storeId: 'store-atelier-01',
     name: 'Blazer Alfaiataria Crepe Noir',
     description: 'Blazer estruturado com ombros delineados, botões em resina fosca e forro em cetim maquinetado.',
     category: 'upper_body',
@@ -109,7 +109,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 'prod-005',
-    storeId: 'demo-store-001',
+    storeId: 'store-atelier-01',
     name: 'Saia Plissada Metalizada Gold',
     description: 'Saia midi plissada em tecido acetinado com reflexos dourados e cós elástico com acabamento lurex.',
     category: 'lower_body',
@@ -159,7 +159,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
   function addProduct(productData: Partial<Product>): Product {
     const newProduct: Product = {
       id: productData.id || `prod-${Date.now()}`,
-      storeId: productData.storeId || 'demo-store-001',
+      storeId: productData.storeId || 'store-atelier-01',
       name: productData.name || 'Nova Peça',
       description: productData.description || '',
       category: productData.category || 'full_body',

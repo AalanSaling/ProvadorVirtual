@@ -29,20 +29,25 @@ export class StoreCredentialService {
   }
 
   private async initDefaultEnvFallback() {
-    // Only bootstrap default demo store if not already set in persistent store
+    const storesToBootstrap = ['store-atelier-01', 'demo-store-001'];
+
     const pcKey = process.env.PERFECTCORP_API_KEY || process.env.PERFECT_CORP_API_KEY;
     if (pcKey && pcKey.trim() && pcKey !== 'demo-perfectcorp-key') {
-      const has = await this.secretStore.hasSecret('demo-store-001', 'perfectcorp');
-      if (!has) {
-        await this.secretStore.setSecret('demo-store-001', 'perfectcorp', pcKey.trim());
+      for (const sId of storesToBootstrap) {
+        const has = await this.secretStore.hasSecret(sId, 'perfectcorp');
+        if (!has) {
+          await this.secretStore.setSecret(sId, 'perfectcorp', pcKey.trim());
+        }
       }
     }
 
     const googleKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
     if (googleKey && googleKey.trim() && googleKey !== 'demo-google-key') {
-      const has = await this.secretStore.hasSecret('demo-store-001', 'google');
-      if (!has) {
-        await this.secretStore.setSecret('demo-store-001', 'google', googleKey.trim());
+      for (const sId of storesToBootstrap) {
+        const has = await this.secretStore.hasSecret(sId, 'google');
+        if (!has) {
+          await this.secretStore.setSecret(sId, 'google', googleKey.trim());
+        }
       }
     }
   }
