@@ -65,6 +65,8 @@ export function computeSha256(buffer: Buffer): string {
   return crypto.createHash('sha256').update(buffer).digest('hex');
 }
 
+export const computeImageBufferSha256 = computeSha256;
+
 export async function getImageMetadata(
   imageInput: string
 ): Promise<{ width: number; height: number; format: string; mimeType: string; sizeBytes: number }> {

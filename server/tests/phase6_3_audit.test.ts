@@ -8,8 +8,6 @@ import { StoreCredentialService } from '../services/StoreCredentialService.js';
 import { EncryptedFileSecretStore } from '../services/SecretStore.js';
 import { ITryOnProvider } from '../providers/interfaces/ITryOnProvider.js';
 import { TryOnInput, TryOnResult, ExecutionContext, GarmentCategory } from '../types/index.js';
-import { ICatalogService } from '../services/interfaces/ICatalogService.js';
-import { IStorageService } from '../services/interfaces/IStorageService.js';
 import { validateTryOnSemanticInput } from '../utils/imageValidator.js';
 
 console.log('================================================================');
@@ -17,7 +15,7 @@ console.log('🔍 RUNNING FASE 6.3 — AUDIT AND CORRECTION VERIFICATION SUITE')
 console.log('================================================================');
 
 // Mock in-memory storage and catalog services
-class MockStorageService implements IStorageService {
+class MockStorageService {
   async uploadFile(buffer: Buffer, mimeType: string, pathPrefix: string): Promise<string> {
     return `https://storage.atelier.test/${pathPrefix}/file_${Date.now()}.png`;
   }
@@ -30,9 +28,12 @@ class MockStorageService implements IStorageService {
   createLocalSignedResultUrl(fileKey: string, expiresAt: number): string {
     return `/api/try-on/result/signed/${fileKey}?expires=${expiresAt}`;
   }
+  getPublicUrl(bucket: string, path: string): string {
+    return `https://storage.atelier.test/${bucket}/${path}`;
+  }
 }
 
-class MockCatalogService implements ICatalogService {
+class MockCatalogService {
   private products: Record<string, any> = {
     'prod-dress-A': {
       id: 'prod-dress-A',
@@ -133,7 +134,7 @@ async function runAuditTests() {
   const storageService = new MockStorageService();
   const catalogService = new MockCatalogService();
   const imagePrepService = ImagePreparationService.getInstance();
-  const garmentPrepService = new GarmentPreparationService(catalogService, storageService, imagePrepService);
+  const garmentPrepService = new GarmentPreparationService(catalogService as any, storageService as any, imagePrepService);
   const tryOnService = new TryOnService(registry, storageService as any, credentialService);
 
   // TEST 1: Strict Product Isolation (A vs B)

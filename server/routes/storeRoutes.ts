@@ -73,11 +73,41 @@ async function handleSaveCredentials(req: AuthenticatedRequest, res: Response): 
       return;
     }
 
-    // Save encrypted in server vault
-    const { masked } = await credentialService.setCredential(storeId, providerId, keyToSave);
+    // 1. Save encrypted secret into SecretStore vault
+    const { masked } = await credentialService.setCredential(storeId, providerId, keyToSave.trim());
 
-    // Run connection test and record outcome
-    credentialService.recordTestResult(storeId, providerId, 'success', 'Conexão validada com sucesso');
+    // 2. Retrieve the stored secret from SecretStore
+    const storeApiKey = await credentialService.getCredential(storeId, providerId);
+    if (!storeApiKey) {
+      res.status(400).json({
+        status: 'error',
+        error: 'CREDENTIAL_MISSING',
+        message: 'Não foi possível validar essa chave.',
+      });
+      return;
+    }
+
+    // 3. Test real provider configuration using the store-specific credential
+    const provider = registry.get(providerId)!;
+    const isValid = await provider.validateConfiguration({
+      storeId,
+      providerId,
+      storeApiKey,
+    });
+
+    if (!isValid) {
+      // Do NOT register success if provider validation fails
+      await credentialService.recordTestResult(storeId, providerId, 'failed', 'Não foi possível validar essa chave.');
+      res.status(400).json({
+        status: 'error',
+        error: 'INVALID_CREDENTIAL',
+        message: 'Não foi possível validar essa chave.',
+      });
+      return;
+    }
+
+    // 4. Record success only after real provider validation succeeds
+    await credentialService.recordTestResult(storeId, providerId, 'success', 'Conexão validada com sucesso');
 
     res.json({
       provider: providerId,
@@ -141,8 +171,18 @@ async function handleTestProvider(req: AuthenticatedRequest, res: Response): Pro
       storeApiKey,
     });
 
+    if (!isConfigured) {
+      await credentialService.recordTestResult(storeId, providerId, 'failed', 'Não foi possível validar essa chave.');
+      res.status(400).json({
+        status: 'error',
+        error: 'INVALID_CREDENTIAL',
+        message: 'Não foi possível validar essa chave.',
+      });
+      return;
+    }
+
     // Quick verification ping
-    await new Promise(r => setTimeout(r, 450));
+    await new Promise(r => setTimeout(r, 120));
 
     await credentialService.recordTestResult(storeId, providerId, 'success', 'Conexão OK');
 

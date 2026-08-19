@@ -175,17 +175,17 @@ async function runTests() {
     console.log('  ✅ Cross-store product request rejected with STORE_MISMATCH');
 
     // -------------------------------------------------------------
-    // Test 5: Segmentation Pipeline Fallback (GARMENT_SEGMENTATION_NOT_IMPLEMENTED)
+    // Test 5: Segmentation Pipeline Failure Handled Strictly (GARMENT_PREPARATION_FAILED)
     // -------------------------------------------------------------
-    console.log('\nTest 5: Garment Preparation Segmentation Fallback');
+    console.log('\nTest 5: Garment Preparation Strict Failure Without Fallback');
     delete process.env.GARMENT_SEGMENTATION_SERVICE_URL;
 
     const prepResult = await garmentPrepService.prepareGarmentFromCatalog('prod-dress-01', 'store-paris');
-    assert.strictEqual(prepResult.status, 'segmentation_not_implemented');
-    assert.strictEqual(prepResult.errorCode, 'GARMENT_SEGMENTATION_NOT_IMPLEMENTED');
+    assert.strictEqual(prepResult.status, 'failed');
+    assert.strictEqual(prepResult.errorCode, 'GARMENT_PREPARATION_FAILED');
     assert.strictEqual(prepResult.isCleanedGarment, false);
-    assert.strictEqual(prepResult.referenceUrl, 'https://cdn.example.com/try_on_reference_flat.png');
-    console.log('  ✅ Fallback reported GARMENT_SEGMENTATION_NOT_IMPLEMENTED without arbitrary slicing');
+    assert.strictEqual(prepResult.referenceUrl, null);
+    console.log('  ✅ Strict failure reported GARMENT_PREPARATION_FAILED with null referenceUrl');
 
     // -------------------------------------------------------------
     // Test 6: Perfect Corp Payload Verification (Absolute Direction Lock)

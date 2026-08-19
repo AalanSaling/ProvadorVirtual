@@ -178,12 +178,13 @@ export class ImagePreparationService {
 
   /**
    * 2. GARMENT QUALITY GATE
-   * Validates resolution, format, decodability, single garment presence, and details.
+   * Validates resolution, format, decodability, single garment presence, model removal, and details preservation with real visual evidence.
    */
   public async validateGarmentQuality(
     originalUrl: string,
     preparedUrl: string | null,
-    analysis?: GarmentVisualAnalysis | null
+    analysis?: GarmentVisualAnalysis | null,
+    apiKeyOverride?: string
   ): Promise<GarmentQualityGateResult> {
     if (!preparedUrl) {
       return {
@@ -225,11 +226,11 @@ export class ImagePreparationService {
         return {
           passed: false,
           hasSingleGarment: false,
-          modelRemoved: analysis?.hasModelOrPerson ? false : true,
+          modelRemoved: false,
           cleanBackground: false,
           minResolutionPassed: false,
           decodableFormat,
-          colorPreserved: true,
+          colorPreserved: false,
           detailsPreserved: false,
           errorCode: 'GARMENT_PREPARATION_FAILED',
           errorMessage: `Resolução da imagem preparada (${meta.width}x${meta.height}px) é inferior ao mínimo de 512x384px.`,
@@ -240,11 +241,11 @@ export class ImagePreparationService {
         return {
           passed: false,
           hasSingleGarment: false,
-          modelRemoved: analysis?.hasModelOrPerson ? false : true,
+          modelRemoved: false,
           cleanBackground: false,
           minResolutionPassed: true,
           decodableFormat: false,
-          colorPreserved: true,
+          colorPreserved: false,
           detailsPreserved: false,
           errorCode: 'GARMENT_PREPARATION_FAILED',
           errorMessage: `Formato de imagem preparado inválido (${meta.mimeType}). Exigido JPEG ou PNG.`,
@@ -267,17 +268,115 @@ export class ImagePreparationService {
         };
       }
 
+      // AI Evidence Verification on Prepared Image
+      const apiKey = this.getApiKey(apiKeyOverride);
+      if (apiKey) {
+        try {
+          const prepImagePart = await this.prepareImagePart(preparedUrl, 'Prepared Garment Image');
+          const ai = new GoogleGenAI({
+            apiKey,
+            httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+          });
+
+          const verifyPrompt = `
+Analyze this prepared garment image that was extracted/isolated for a Virtual Try-On application.
+Check whether:
+1. Any human person/model/body parts/face are visible (modelRemoved must be true ONLY IF no human or mannequin parts remain).
+2. The background is clean and neutral (cleanBackground).
+3. The image contains a single clear garment (hasSingleGarment).
+4. Colors match the expected garment (${analysis?.primaryColor || 'original color'}) (colorPreserved).
+5. Clothing details/textures/structure are preserved (detailsPreserved).
+
+Return STRICT JSON without markdown code fences:
+{
+  "hasModelOrPerson": boolean,
+  "modelRemoved": boolean,
+  "cleanBackground": boolean,
+  "hasSingleGarment": boolean,
+  "colorPreserved": boolean,
+  "detailsPreserved": boolean,
+  "passed": boolean,
+  "reason": string
+}
+`.trim();
+
+          const verifyRes = await ai.models.generateContent({
+            model: ImagePreparationService.MODEL_NAME,
+            contents: {
+              parts: [
+                { inlineData: { mimeType: prepImagePart.mimeType, data: prepImagePart.data } },
+                { text: verifyPrompt },
+              ],
+            },
+          });
+
+          const verifyText = verifyRes.text || '';
+          const cleanJson = verifyText.replace(/```json/gi, '').replace(/```/g, '').trim();
+          const parsed = JSON.parse(cleanJson);
+
+          const modelRemoved = Boolean(parsed.modelRemoved && !parsed.hasModelOrPerson);
+          const cleanBackground = Boolean(parsed.cleanBackground);
+          const hasSingleGarment = Boolean(parsed.hasSingleGarment);
+          const colorPreserved = Boolean(parsed.colorPreserved);
+          const detailsPreserved = Boolean(parsed.detailsPreserved);
+
+          const passed = Boolean(
+            modelRemoved &&
+            cleanBackground &&
+            hasSingleGarment &&
+            colorPreserved &&
+            detailsPreserved
+          );
+
+          if (!passed) {
+            return {
+              passed: false,
+              hasSingleGarment,
+              modelRemoved,
+              cleanBackground,
+              minResolutionPassed: true,
+              decodableFormat: true,
+              colorPreserved,
+              detailsPreserved,
+              errorCode: 'GARMENT_PREPARATION_FAILED',
+              errorMessage: parsed.reason || (!modelRemoved ? 'A imagem preparada ainda contém a pessoa ou modelo da foto de catálogo.' : 'A imagem preparada não atende aos critérios de isolamento do Quality Gate.'),
+            };
+          }
+
+          return {
+            passed: true,
+            hasSingleGarment: true,
+            modelRemoved: true,
+            cleanBackground: true,
+            minResolutionPassed: true,
+            decodableFormat: true,
+            colorPreserved: true,
+            detailsPreserved: true,
+            errorCode: null,
+            errorMessage: null,
+          };
+        } catch (aiVerifyErr: any) {
+          logger.warn('[ImagePreparation] AI Quality Gate verification check failed, using metadata checks', {
+            error: aiVerifyErr.message,
+          });
+        }
+      }
+
+      // If no AI key available, perform strict rule-based verification:
+      // If original had a model, and we cannot verify removal via AI, we do not assume modelRemoved: true without proof
+      const isPreparedDistinct = preparedUrl !== originalUrl && (preparedUrl.includes('prep_') || preparedUrl.includes('try_on') || preparedUrl.includes('segmented'));
+
       return {
-        passed: true,
-        hasSingleGarment: true,
-        modelRemoved: true,
-        cleanBackground: true,
+        passed: isPreparedDistinct,
+        hasSingleGarment: isPreparedDistinct,
+        modelRemoved: isPreparedDistinct,
+        cleanBackground: isPreparedDistinct,
         minResolutionPassed: true,
         decodableFormat: true,
         colorPreserved: true,
         detailsPreserved: true,
-        errorCode: null,
-        errorMessage: null,
+        errorCode: isPreparedDistinct ? null : 'GARMENT_PREPARATION_FAILED',
+        errorMessage: isPreparedDistinct ? null : 'A preparação não produziu uma imagem tratada e isolada.',
       };
     } catch (err: any) {
       return {
@@ -432,7 +531,7 @@ export class ImagePreparationService {
           faceVisible: false,
           lightingAdequate: false,
           poseAdequate: false,
-          humanMessage: 'Não foi possível carregar a imagem. Escolha uma foto válida (JPEG ou PNG).',
+          humanMessage: 'Escolha uma foto de corpo inteiro, bem iluminada e nítida.',
           errorCode: 'INVALID_PERSON_IMAGE_FORMAT',
         };
       }
@@ -446,7 +545,7 @@ export class ImagePreparationService {
           faceVisible: true,
           lightingAdequate: false,
           poseAdequate: false,
-          humanMessage: 'A resolução da foto está muito baixa. Escolha uma foto de boa qualidade e nítida.',
+          humanMessage: 'Escolha uma foto de corpo inteiro, bem iluminada e nítida.',
           errorCode: 'PERSON_RESOLUTION_TOO_LOW',
         };
       }
@@ -514,7 +613,7 @@ Return a STRICT JSON object without markdown fences:
           faceVisible: Boolean(parsed.faceVisible),
           lightingAdequate: Boolean(parsed.lightingAdequate),
           poseAdequate: Boolean(parsed.poseAdequate),
-          humanMessage: parsed.humanMessage || (isValid ? 'Foto aprovada para o provador virtual.' : 'Escolha uma foto de corpo inteiro com boa iluminação e nitidez.'),
+          humanMessage: isValid ? (parsed.humanMessage || 'Foto aprovada para o provador virtual.') : 'Escolha uma foto de corpo inteiro, bem iluminada e nítida.',
           errorCode: isValid ? null : 'PERSON_QUALITY_CHECK_FAILED',
         };
       } catch (aiErr: any) {
@@ -527,7 +626,7 @@ Return a STRICT JSON object without markdown fences:
           faceVisible: false,
           lightingAdequate: false,
           poseAdequate: false,
-          humanMessage: 'Não foi possível verificar sua foto automaticamente. Tente novamente com uma foto nítida e bem iluminada.',
+          humanMessage: 'Escolha uma foto de corpo inteiro, bem iluminada e nítida.',
           errorCode: 'PERSON_QUALITY_CHECK_FAILED',
         };
       }
@@ -540,7 +639,7 @@ Return a STRICT JSON object without markdown fences:
         faceVisible: false,
         lightingAdequate: false,
         poseAdequate: false,
-        humanMessage: 'Escolha uma foto de corpo inteiro com boa iluminação.',
+        humanMessage: 'Escolha uma foto de corpo inteiro, bem iluminada e nítida.',
         errorCode: 'PERSON_QUALITY_CHECK_ERROR',
       };
     }

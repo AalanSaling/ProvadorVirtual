@@ -155,14 +155,31 @@ export class GarmentPreparationService {
     const segmentationEngineUrl = process.env.GARMENT_SEGMENTATION_SERVICE_URL;
 
     if (!segmentationEngineUrl) {
-      logger.info(`[GarmentPreparation] No AI segmentation service configured. Using isolated try_on_reference photo for product ${productId}.`);
+      // If no external segmentation engine, use the AI garment preparation pipeline
+      const prepMeta = await this.imagePrepService.prepareGarment({
+        catalogImageUrl: catalogImageUrl || referenceUrl,
+        category: product.category,
+        productId: product.id,
+        storeId: product.storeId,
+        productName: product.name,
+      });
+
+      if (prepMeta.status === 'ready' && prepMeta.preparedImageUrl) {
+        return {
+          status: 'prepared',
+          referenceUrl: prepMeta.preparedImageUrl,
+          segmentationEngine: 'gemini-3.1-flash-image',
+          isCleanedGarment: true,
+        };
+      }
+
       return {
-        status: 'segmentation_not_implemented',
-        referenceUrl,
+        status: 'failed',
+        referenceUrl: null,
         segmentationEngine: null,
         isCleanedGarment: false,
-        errorCode: 'GARMENT_SEGMENTATION_NOT_IMPLEMENTED',
-        message: 'No automated AI garment segmentation engine configured in environment. The dedicated try_on_reference image is preserved.',
+        errorCode: 'GARMENT_PREPARATION_FAILED',
+        message: prepMeta.qualityGate?.errorMessage || 'A preparação automática da peça falhou no Quality Gate.',
       };
     }
 
@@ -201,12 +218,12 @@ export class GarmentPreparationService {
     } catch (err: any) {
       logger.error('[GarmentPreparation] Error during garment segmentation', err);
       return {
-        status: 'segmentation_not_implemented',
-        referenceUrl,
+        status: 'failed',
+        referenceUrl: null,
         segmentationEngine: segmentationEngineUrl,
         isCleanedGarment: false,
         errorCode: 'GARMENT_SEGMENTATION_FAILED',
-        message: `Failed to segment garment image: ${err.message}`,
+        message: `Falha na segmentação da peça: ${err.message}`,
       };
     }
   }

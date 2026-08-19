@@ -112,8 +112,8 @@ export interface TryOnSemanticValidation {
 }
 
 export interface GarmentPreparationResult {
-  status: 'prepared' | 'existing_reference' | 'segmentation_not_implemented';
-  referenceUrl: string;
+  status: 'prepared' | 'existing_reference' | 'segmentation_not_implemented' | 'failed';
+  referenceUrl: string | null;
   segmentationEngine: string | null;
   isCleanedGarment: boolean;
   errorCode?: string | null;
