@@ -57,7 +57,17 @@ export function validateEnv(): EnvConfig {
     ''
   ).replace(/\/+$/, '');
 
-  const rawSupabaseUrl = (process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim();
+  const normalizeSupabaseUrl = (raw: string): string => {
+    if (!raw) return '';
+    const trimmed = raw.trim();
+    const dashboardMatch = trimmed.match(/supabase\.com\/dashboard\/project\/([a-zA-Z0-9_-]+)/);
+    if (dashboardMatch && dashboardMatch[1]) {
+      return `https://${dashboardMatch[1]}.supabase.co`;
+    }
+    return trimmed.replace(/\/+$/, '');
+  };
+
+  const rawSupabaseUrl = normalizeSupabaseUrl(process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '');
   const rawServiceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
   const rawAnonKey = (process.env.SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
 

@@ -192,6 +192,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string): Promise<{ error: Error | null }> => {
     if (!isSupabaseConfigured) {
+      console.log('[SUPABASE_DIAGNOSTIC] configured=false signinAttempt=true signinErrorCode=CONFIG_ERROR');
       return {
         error: new Error('Serviço de autenticação não configurado (EXPO_PUBLIC_SUPABASE_URL / ANON_KEY ausentes).'),
       };
@@ -202,6 +203,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: email.trim(),
         password,
       });
+
+      console.log(
+        `[SUPABASE_DIAGNOSTIC] configured=true signinAttempt=true signinSuccess=${!error} sessionExists=${Boolean(data?.session)} signinErrorCode=${error?.status || (error ? 'AUTH_ERROR' : 'NONE')} signinErrorType=${error?.name || 'NONE'}`
+      );
 
       if (error) {
         return { error: new Error(mapSupabaseAuthError(error.message)) };
@@ -214,12 +219,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: null };
     } catch (err: any) {
       const rawMsg = err instanceof Error ? err.message : String(err);
+      console.log(
+        `[SUPABASE_DIAGNOSTIC] configured=true signinAttempt=true signinSuccess=false signinErrorCode=NETWORK_ERROR errorType=exception`
+      );
       return { error: new Error(mapSupabaseAuthError(rawMsg)) };
     }
   };
 
   const signUp = async (email: string, password: string): Promise<SignUpResult> => {
     if (!isSupabaseConfigured) {
+      console.log('[SUPABASE_DIAGNOSTIC] configured=false signupAttempt=true signupErrorCode=CONFIG_ERROR');
       return {
         error: new Error('Serviço de autenticação não configurado (EXPO_PUBLIC_SUPABASE_URL / ANON_KEY ausentes).'),
       };
@@ -230,6 +239,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: email.trim(),
         password,
       });
+
+      console.log(
+        `[SUPABASE_DIAGNOSTIC] configured=true signupAttempt=true signupSuccess=${!error} sessionExists=${Boolean(data?.session)} hasUser=${Boolean(data?.user)} signupErrorCode=${error?.status || (error ? 'AUTH_ERROR' : 'NONE')} signupErrorType=${error?.name || 'NONE'}`
+      );
 
       if (error) {
         return {
@@ -261,6 +274,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
     } catch (err: any) {
       const rawMsg = err instanceof Error ? err.message : String(err);
+      console.log(
+        `[SUPABASE_DIAGNOSTIC] configured=true signupAttempt=true signupSuccess=false signupErrorCode=NETWORK_ERROR errorType=exception`
+      );
       return {
         error: new Error(mapSupabaseAuthError(rawMsg)),
       };

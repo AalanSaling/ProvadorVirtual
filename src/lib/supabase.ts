@@ -29,6 +29,16 @@ function isValidHttpUrl(stringUrl: string): boolean {
   }
 }
 
+export function normalizeSupabaseUrl(raw: string): string {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  const dashboardMatch = trimmed.match(/supabase\.com\/dashboard\/project\/([a-zA-Z0-9_-]+)/);
+  if (dashboardMatch && dashboardMatch[1]) {
+    return `https://${dashboardMatch[1]}.supabase.co`;
+  }
+  return trimmed.replace(/\/+$/, '');
+}
+
 function resolvePublicConfig(): { url: string; key: string } {
   // 1. Check window.__EXPO_PUBLIC_ENV__ (injected into HTML by Express server)
   let windowUrl = '';
@@ -57,7 +67,8 @@ function resolvePublicConfig(): { url: string; key: string } {
     }
   }
 
-  const url = windowUrl || envUrl;
+  const rawCandidate = windowUrl || envUrl;
+  const url = normalizeSupabaseUrl(rawCandidate);
   const key = windowKey || envKey;
 
   return { url, key };
@@ -165,40 +176,83 @@ export const supabase: SupabaseClient = createClient(clientUrl, clientKey, {
 
 export type ConnectivityStatus = 'CONFIG_ERROR' | 'NETWORK_ERROR' | 'SUPABASE_AUTH_ERROR' | 'HEALTHY';
 
-/**
- * Checks real connectivity against Supabase without using fake mocks.
- */
-export async function checkSupabaseConnectivity(): Promise<{
+export interface SupabaseConnectivityResult {
   ok: boolean;
   status: ConnectivityStatus;
+  urlReachable: boolean;
+  authReachable: boolean;
   message: string;
-}> {
+}
+
+/**
+ * Checks real connectivity against Supabase via an explicit HTTP health check
+ * to the public /auth/v1/settings endpoint, without requiring login or session.
+ */
+export async function checkSupabaseConnectivity(): Promise<SupabaseConnectivityResult> {
   if (!isSupabaseConfigured) {
+    console.log('[SUPABASE_DIAGNOSTIC] configured=false urlReachable=false authReachable=false sessionExists=false');
     return {
       ok: false,
       status: 'CONFIG_ERROR',
+      urlReachable: false,
+      authReachable: false,
       message: 'Serviço de autenticação não configurado no cliente (EXPO_PUBLIC_SUPABASE_URL / ANON_KEY ausentes).',
     };
   }
 
   try {
-    const { error } = await supabase.auth.getSession();
-    if (error) {
+    const settingsUrl = `${clientUrl}/auth/v1/settings`;
+    const response = await fetch(settingsUrl, {
+      method: 'GET',
+      headers: {
+        'apikey': clientKey,
+        'Authorization': `Bearer ${clientKey}`,
+      },
+    });
+
+    const isAuthReachable = response.ok;
+    const isUrlReachable = response.status !== 0 && response.status !== 404;
+
+    console.log(
+      `[SUPABASE_DIAGNOSTIC] configured=true urlReachable=${isUrlReachable} authReachable=${isAuthReachable} httpStatus=${response.status}`
+    );
+
+    if (response.ok) {
+      return {
+        ok: true,
+        status: 'HEALTHY',
+        urlReachable: true,
+        authReachable: true,
+        message: 'Conexão com Supabase Auth estabelecida com sucesso.',
+      };
+    }
+
+    if (response.status === 401 || response.status === 403) {
       return {
         ok: false,
         status: 'SUPABASE_AUTH_ERROR',
-        message: error.message || 'Falha ao comunicar com Supabase Auth.',
+        urlReachable: true,
+        authReachable: false,
+        message: 'Chave pública (ANON_KEY) inválida ou expirada no projeto Supabase.',
       };
     }
+
     return {
-      ok: true,
-      status: 'HEALTHY',
-      message: 'Conexão com Supabase Auth estabelecida com sucesso.',
+      ok: false,
+      status: 'SUPABASE_AUTH_ERROR',
+      urlReachable: isUrlReachable,
+      authReachable: false,
+      message: `Supabase Auth respondeu com status ${response.status} (${response.statusText}).`,
     };
   } catch (err: any) {
+    console.log(
+      `[SUPABASE_DIAGNOSTIC] configured=true urlReachable=false authReachable=false errorType=network error=${err?.message}`
+    );
     return {
       ok: false,
       status: 'NETWORK_ERROR',
+      urlReachable: false,
+      authReachable: false,
       message: err?.message || 'Falha de rede ao conectar ao Supabase.',
     };
   }

@@ -40,13 +40,23 @@ app.use('/api/store', storeRouter);
 // 4. Serve Expo Web Static Bundle for AI Studio Preview with safe public env injection
 const distWebPath = path.join(__dirname, 'dist-web');
 if (fs.existsSync(distWebPath)) {
+  const normalizeSupabaseUrl = (raw: string): string => {
+    if (!raw) return '';
+    const trimmed = raw.trim();
+    const dashboardMatch = trimmed.match(/supabase\.com\/dashboard\/project\/([a-zA-Z0-9_-]+)/);
+    if (dashboardMatch && dashboardMatch[1]) {
+      return `https://${dashboardMatch[1]}.supabase.co`;
+    }
+    return trimmed.replace(/\/+$/, '');
+  };
+
   const getInjectedHtml = () => {
     try {
       const rawHtml = fs.readFileSync(path.join(distWebPath, 'index.html'), 'utf-8');
       // Strictly ONLY inject the two public client-side credentials
       const publicEnv = {
-        EXPO_PUBLIC_SUPABASE_URL: (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim(),
-        EXPO_PUBLIC_SUPABASE_ANON_KEY: (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim(),
+        EXPO_PUBLIC_SUPABASE_URL: normalizeSupabaseUrl(process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || ''),
+        EXPO_PUBLIC_SUPABASE_ANON_KEY: (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '').trim(),
       };
       const scriptTag = `<script id="expo-public-env">window.__EXPO_PUBLIC_ENV__ = ${JSON.stringify(publicEnv)};</script>`;
       if (rawHtml.includes('</head>')) {
