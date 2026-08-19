@@ -151,7 +151,8 @@ export class StorageService {
       .digest('hex');
 
     const baseUrl = (customBaseUrl || env.BACKEND_PUBLIC_URL || '').replace(/\/+$/, '');
-    return `${baseUrl}/api/try-on/results/download?file=${encodeURIComponent(fileKey)}&expires=${expiresAt}&sig=${signature}`;
+    const relativePath = `/api/try-on/results/download?file=${encodeURIComponent(fileKey)}&expires=${expiresAt}&sig=${signature}`;
+    return baseUrl ? `${baseUrl}${relativePath}` : relativePath;
   }
 
   /**

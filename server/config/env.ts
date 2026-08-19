@@ -54,7 +54,7 @@ export function validateEnv(): EnvConfig {
   const BACKEND_PUBLIC_URL = (
     process.env.BACKEND_PUBLIC_URL?.trim() ||
     process.env.PUBLIC_URL?.trim() ||
-    `http://localhost:${PORT}`
+    ''
   ).replace(/\/+$/, '');
 
   const rawSupabaseUrl = (process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim();
