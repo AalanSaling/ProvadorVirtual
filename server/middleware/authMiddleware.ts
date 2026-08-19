@@ -6,12 +6,16 @@ import { AuthenticatedRequest, StoreRole } from '../types/index.js';
 import { logger } from '../utils/logger.js';
 
 // Admin Supabase Client initialized with Service Role Key (SERVER ONLY)
-export const supabaseAdmin = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-});
+export const supabaseAdmin = createClient(
+  env.isSupabaseConfigured ? env.SUPABASE_URL : 'https://unconfigured.supabase.local',
+  env.isSupabaseConfigured ? env.SUPABASE_SERVICE_ROLE_KEY : 'unconfigured_service_role_key_00000000000000',
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  }
+);
 
 /**
  * Middleware: requireAuth
@@ -30,6 +34,14 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
     const token = authHeader.split(' ')[1];
     if (!token) {
       res.status(401).json({ error: 'UNAUTHORIZED', message: 'Invalid Bearer token.' });
+      return;
+    }
+
+    if (!env.isSupabaseConfigured) {
+      res.status(503).json({
+        error: 'SUPABASE_SERVER_NOT_CONFIGURED',
+        message: 'Serviço de autenticação do servidor não configurado no backend.',
+      });
       return;
     }
 

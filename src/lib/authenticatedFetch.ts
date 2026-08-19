@@ -1,5 +1,5 @@
 // src/lib/authenticatedFetch.ts
-import { supabase } from './supabase';
+import { supabase, isSupabaseConfigured } from './supabase';
 import { notifySessionExpired } from '../context/AuthContext';
 
 export type AuthErrorCode =
@@ -8,7 +8,8 @@ export type AuthErrorCode =
   | 'FORBIDDEN'
   | 'NETWORK_ERROR'
   | 'SERVER_ERROR'
-  | 'INVALID_CREDENTIAL';
+  | 'INVALID_CREDENTIAL'
+  | 'CONFIG_ERROR';
 
 export class AppAuthError extends Error {
   code: AuthErrorCode;
@@ -40,12 +41,20 @@ export async function authenticatedFetch(
   options: AuthenticatedFetchOptions = {}
 ): Promise<Response> {
   // 1. Obtain current Supabase session
-  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  let session = null;
+  let sessionError = null;
+  try {
+    const res = await supabase.auth.getSession();
+    session = res.data?.session;
+    sessionError = res.error;
+  } catch (err) {
+    sessionError = err;
+  }
   const token = session?.access_token;
 
-  // Safe debug log (Requirement 9: never logs tokens, JWTs, or API keys)
+  // Safe debug log (Requirement 17: NEVER logs tokens, JWTs, keys, or secrets)
   console.log(
-    `[AUTH_CHECK] sessionExists=${Boolean(session)} hasAccessToken=${Boolean(token)} userIdExists=${Boolean(session?.user?.id)}`
+    `[AUTH_CHECK] sessionExists=${Boolean(session)} hasAccessToken=${Boolean(token)} userIdExists=${Boolean(session?.user?.id)} supabaseConfigured=${isSupabaseConfigured}`
   );
 
   // 2. If no session exists: distinct AUTH_MISSING error (NOT session expired!)
@@ -99,17 +108,18 @@ export async function authenticatedFetch(
         parsedError?.message?.toLowerCase().includes('validar') ||
         parsedError?.message?.toLowerCase().includes('credential'))
     ) {
-      throw new AppAuthError('Não foi possível validar essa chave.', 'INVALID_CREDENTIAL', 400);
+      throw new AppAuthError(
+        parsedError.message || 'Não foi possível validar essa chave.',
+        'INVALID_CREDENTIAL',
+        400
+      );
     }
 
-    const friendlyMessage =
-      parsedError?.message &&
-      !parsedError.message.includes('Authorization header') &&
-      !parsedError.message.includes('Bearer token')
-        ? parsedError.message
-        : 'Não foi possível validar essa chave.';
-
-    throw new Error(friendlyMessage);
+    throw new AppAuthError(
+      parsedError?.message || `Erro na requisição (${res.status}).`,
+      'SERVER_ERROR',
+      res.status
+    );
   }
 
   return res;

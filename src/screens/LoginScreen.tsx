@@ -13,51 +13,89 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
-import { Sparkles, User, Lock, Mail, ArrowRight, LogOut, ShieldCheck, AlertCircle } from 'lucide-react-native';
+import {
+  Sparkles,
+  User,
+  Lock,
+  Mail,
+  ArrowRight,
+  LogOut,
+  ShieldCheck,
+  AlertCircle,
+  CheckCircle2,
+  Server,
+  Key,
+} from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import { colors, spacing, borderRadius, shadows } from '../theme/theme';
 
 export function LoginScreen() {
-  const { user, signIn, signUp, signOut, isConfigured } = useAuth();
+  const { user, signIn, signUp, signOut, isConfigured, configStatus } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successInfo, setSuccessInfo] = useState<string | null>(null);
 
   async function handleAuth() {
     setErrorMessage(null);
-    if (!email || !password) {
+    setSuccessInfo(null);
+
+    if (!isConfigured) {
+      const msg = 'Serviço de autenticação não configurado. Defina EXPO_PUBLIC_SUPABASE_URL e EXPO_PUBLIC_SUPABASE_ANON_KEY no arquivo .env.';
+      setErrorMessage(msg);
+      Alert.alert('Supabase Não Configurado', msg);
+      return;
+    }
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
       const msg = 'Informe seu e-mail e senha para continuar.';
       setErrorMessage(msg);
       Alert.alert('Campos Obrigatórios', msg);
       return;
     }
 
+    if (!trimmedEmail.includes('@') || !trimmedEmail.includes('.')) {
+      const msg = 'Informe um endereço de e-mail válido.';
+      setErrorMessage(msg);
+      Alert.alert('E-mail Inválido', msg);
+      return;
+    }
+
     if (password.length < 6) {
       const msg = 'A senha deve conter no mínimo 6 caracteres.';
       setErrorMessage(msg);
-      Alert.alert('Senha Inválida', msg);
+      Alert.alert('Senha Curta', msg);
       return;
     }
 
     setLoading(true);
 
     if (isSignUp) {
-      const { error } = await signUp(email.trim(), password);
+      const result = await signUp(trimmedEmail, password);
       setLoading(false);
-      if (error) {
-        setErrorMessage(error.message);
-        Alert.alert('Erro ao Criar Conta', error.message);
+
+      if (result.error) {
+        setErrorMessage(result.error.message);
+        Alert.alert('Erro no Cadastro', result.error.message);
+      } else if (result.requiresEmailConfirmation) {
+        const infoMsg = `Conta criada com sucesso! Enviamos um link de confirmação para ${trimmedEmail}. Por favor, confirme seu e-mail antes de fazer login.`;
+        setSuccessInfo(infoMsg);
+        setIsSignUp(false); // Switch to login tab so they can sign in after confirming
+        Alert.alert('Confirmação Necessária', infoMsg);
       } else {
-        Alert.alert('Conta Criada', 'Sua conta foi criada com sucesso.');
+        // Immediate login
+        setSuccessInfo('Conta criada e autenticada com sucesso!');
       }
     } else {
-      const { error } = await signIn(email.trim(), password);
+      const result = await signIn(trimmedEmail, password);
       setLoading(false);
-      if (error) {
-        setErrorMessage(error.message);
-        Alert.alert('Erro de Acesso', error.message);
+
+      if (result.error) {
+        setErrorMessage(result.error.message);
+        Alert.alert('Erro ao Entrar', result.error.message);
       }
     }
   }
@@ -85,18 +123,49 @@ export function LoginScreen() {
               <Text style={styles.brandSubtitle}>PROVADOR VIRTUAL DE ALTA COSTURA</Text>
             </View>
 
-            {/* Supabase configuration warning banner if environment not set */}
-            {!isConfigured && (
-              <View style={styles.configNotice}>
-                <AlertCircle size={16} color={colors.accent} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.configNoticeTitle}>Configuração Supabase</Text>
-                  <Text style={styles.configNoticeDesc}>
-                    Para autenticação em produção, defina EXPO_PUBLIC_SUPABASE_URL e EXPO_PUBLIC_SUPABASE_ANON_KEY no arquivo .env.
+            {/* Supabase Diagnostic Status Banner (Requirement 4) */}
+            <View style={[styles.diagnosticCard, !isConfigured && styles.diagnosticCardWarning]}>
+              <View style={styles.diagHeaderRow}>
+                <Server size={14} color={isConfigured ? colors.success : colors.accent} />
+                <Text style={styles.diagTitle}>SUPABASE AUTH CONFIG</Text>
+                <View
+                  style={[
+                    styles.statusPill,
+                    { backgroundColor: isConfigured ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)' },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.statusPillText,
+                      { color: isConfigured ? colors.success : colors.error },
+                    ]}
+                  >
+                    {isConfigured ? 'ONLINE' : 'NÃO CONFIGURADO'}
                   </Text>
                 </View>
               </View>
-            )}
+
+              <View style={styles.diagDetailsRow}>
+                <View style={styles.diagItem}>
+                  <Text style={styles.diagItemLabel}>URL:</Text>
+                  <Text style={styles.diagItemValue}>
+                    {configStatus.hasUrl ? `configurada (${configStatus.urlHost || 'host'})` : 'ausente'}
+                  </Text>
+                </View>
+                <View style={styles.diagItem}>
+                  <Text style={styles.diagItemLabel}>ANON KEY:</Text>
+                  <Text style={styles.diagItemValue}>
+                    {configStatus.hasAnonKey ? 'configurada' : 'ausente'}
+                  </Text>
+                </View>
+              </View>
+
+              {!isConfigured && (
+                <Text style={styles.diagHelpText}>
+                  Defina EXPO_PUBLIC_SUPABASE_URL e EXPO_PUBLIC_SUPABASE_ANON_KEY no arquivo .env para habilitar autenticação real.
+                </Text>
+              )}
+            </View>
 
             {user ? (
               /* Logged in User Card */
@@ -131,6 +200,34 @@ export function LoginScreen() {
             ) : (
               /* Login / Signup Form */
               <View style={styles.formCard}>
+                {/* Tab selector between Entrar and Criar Conta */}
+                <View style={styles.tabContainer}>
+                  <TouchableOpacity
+                    style={[styles.tabButton, !isSignUp && styles.tabButtonActive]}
+                    onPress={() => {
+                      setIsSignUp(false);
+                      setErrorMessage(null);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.tabButtonText, !isSignUp && styles.tabButtonTextActive]}>
+                      Entrar
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.tabButton, isSignUp && styles.tabButtonActive]}
+                    onPress={() => {
+                      setIsSignUp(true);
+                      setErrorMessage(null);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.tabButtonText, isSignUp && styles.tabButtonTextActive]}>
+                      Criar Conta
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
                 <Text style={styles.formTitle}>
                   {isSignUp ? 'Criar Conta Exclusiva' : 'Acesse seu Atelier'}
                 </Text>
@@ -140,16 +237,25 @@ export function LoginScreen() {
                     : 'Entre para acessar o provador virtual e o painel administrativo.'}
                 </Text>
 
+                {/* Email verification notice / success info */}
+                {successInfo && (
+                  <View style={styles.successBanner}>
+                    <CheckCircle2 size={16} color={colors.success} />
+                    <Text style={styles.successBannerText}>{successInfo}</Text>
+                  </View>
+                )}
+
+                {/* Error Banner */}
                 {errorMessage && (
                   <View style={styles.errorBanner}>
-                    <AlertCircle size={14} color={colors.error} />
+                    <AlertCircle size={16} color={colors.error} />
                     <Text style={styles.errorBannerText}>{errorMessage}</Text>
                   </View>
                 )}
 
                 {/* Email Input */}
                 <Text style={styles.inputLabel}>E-MAIL</Text>
-                <View style={styles.inputWrapper}>
+                <View style={[styles.inputWrapper, !isConfigured && styles.inputDisabled]}>
                   <Mail size={16} color={colors.textTertiary} />
                   <TextInput
                     style={styles.input}
@@ -159,12 +265,13 @@ export function LoginScreen() {
                     onChangeText={setEmail}
                     autoCapitalize="none"
                     keyboardType="email-address"
+                    editable={isConfigured && !loading}
                   />
                 </View>
 
                 {/* Password Input */}
                 <Text style={styles.inputLabel}>SENHA</Text>
-                <View style={styles.inputWrapper}>
+                <View style={[styles.inputWrapper, !isConfigured && styles.inputDisabled]}>
                   <Lock size={16} color={colors.textTertiary} />
                   <TextInput
                     style={styles.input}
@@ -173,14 +280,18 @@ export function LoginScreen() {
                     value={password}
                     onChangeText={setPassword}
                     secureTextEntry
+                    editable={isConfigured && !loading}
                   />
                 </View>
 
                 {/* Submit CTA */}
                 <TouchableOpacity
-                  style={styles.submitButton}
+                  style={[
+                    styles.submitButton,
+                    (!isConfigured || loading) && styles.submitButtonDisabled,
+                  ]}
                   onPress={handleAuth}
-                  disabled={loading}
+                  disabled={!isConfigured || loading}
                   activeOpacity={0.85}
                 >
                   {loading ? (
@@ -195,12 +306,13 @@ export function LoginScreen() {
                   )}
                 </TouchableOpacity>
 
-                {/* Switch Sign in / Sign up */}
+                {/* Switch Sign in / Sign up link */}
                 <TouchableOpacity
                   style={styles.switchModeButton}
                   onPress={() => {
                     setIsSignUp(!isSignUp);
                     setErrorMessage(null);
+                    setSuccessInfo(null);
                   }}
                   activeOpacity={0.7}
                 >
@@ -243,7 +355,7 @@ const styles = StyleSheet.create({
   },
   brandHeader: {
     alignItems: 'center',
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
   },
   logoContainer: {
     width: 64,
@@ -270,31 +382,115 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     marginTop: 4,
   },
-  configNotice: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: 'rgba(212, 175, 55, 0.08)',
+  diagnosticCard: {
+    backgroundColor: 'rgba(16, 185, 129, 0.05)',
     borderWidth: 1,
-    borderColor: 'rgba(212, 175, 55, 0.25)',
+    borderColor: 'rgba(16, 185, 129, 0.25)',
     borderRadius: borderRadius.lg,
     padding: spacing.md,
     marginBottom: spacing.lg,
-    gap: spacing.sm,
   },
-  configNoticeTitle: {
-    fontSize: 12,
+  diagnosticCardWarning: {
+    backgroundColor: 'rgba(212, 175, 55, 0.06)',
+    borderColor: 'rgba(212, 175, 55, 0.3)',
+  },
+  diagHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  diagTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    letterSpacing: 1,
+    flex: 1,
+  },
+  statusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: borderRadius.full,
+  },
+  statusPillText: {
+    fontSize: 10,
     fontWeight: '700',
-    color: colors.accent,
-    marginBottom: 2,
+    letterSpacing: 0.5,
   },
-  configNoticeDesc: {
+  diagDetailsRow: {
+    flexDirection: 'column',
+    gap: 4,
+  },
+  diagItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  diagItemLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
+  diagItemValue: {
+    fontSize: 11,
+    color: colors.textTertiary,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  diagHelpText: {
     fontSize: 11,
     color: colors.textSecondary,
-    lineHeight: 16,
+    lineHeight: 15,
+    marginTop: 8,
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: colors.background,
+    borderRadius: borderRadius.md,
+    padding: 3,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: borderRadius.sm,
+  },
+  tabButtonActive: {
+    backgroundColor: colors.surface,
+    ...shadows.card,
+  },
+  tabButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textTertiary,
+  },
+  tabButtonTextActive: {
+    color: colors.accent,
+    fontWeight: '700',
+  },
+  successBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  successBannerText: {
+    color: colors.success,
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 17,
+    flex: 1,
   },
   errorBanner: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
     borderWidth: 1,
     borderColor: 'rgba(239, 68, 68, 0.3)',
@@ -307,6 +503,7 @@ const styles = StyleSheet.create({
     color: colors.error,
     fontSize: 12,
     fontWeight: '500',
+    lineHeight: 16,
     flex: 1,
   },
   userCard: {
@@ -411,6 +608,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     gap: spacing.sm,
   },
+  inputDisabled: {
+    opacity: 0.6,
+    backgroundColor: 'rgba(0, 0, 0, 0.03)',
+  },
   input: {
     flex: 1,
     color: colors.textPrimary,
@@ -423,6 +624,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: spacing.sm,
     ...shadows.cardHover,
+  },
+  submitButtonDisabled: {
+    opacity: 0.5,
   },
   submitButtonText: {
     fontSize: 13,

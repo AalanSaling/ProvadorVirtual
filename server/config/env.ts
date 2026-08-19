@@ -16,12 +16,37 @@ export interface EnvConfig {
   PERFECTCORP_API_KEY?: string;
   PERFECTCORP_API_HOST: string;
   TRY_ON_RESULTS_TTL_DAYS: number;
+  isSupabaseConfigured: boolean;
+}
+
+function isValidHttpUrl(stringUrl: string): boolean {
+  if (!stringUrl) return false;
+  try {
+    const url = new URL(stringUrl);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function isNotPlaceholder(val: string): boolean {
+  if (!val) return false;
+  const lower = val.toLowerCase();
+  return (
+    !lower.includes('your-supabase') &&
+    !lower.includes('your-') &&
+    !lower.includes('placeholder') &&
+    !lower.includes('demo-supabase') &&
+    !lower.includes('demo-service') &&
+    lower !== 'none' &&
+    lower !== 'null' &&
+    lower !== 'undefined'
+  );
 }
 
 /**
  * Validates required environment variables on startup.
- * Throws explicit errors if mandatory credentials or configuration are missing.
- * Strict rule: NEVER fallback from SERVICE_ROLE_KEY to ANON_KEY.
+ * Strictly avoids fake/demo keys and guarantees never falling back to fake URLs.
  */
 export function validateEnv(): EnvConfig {
   const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -32,10 +57,22 @@ export function validateEnv(): EnvConfig {
     `http://localhost:${PORT}`
   ).replace(/\/+$/, '');
 
-  const SUPABASE_URL = process.env.SUPABASE_URL?.trim() || 'https://demo-supabase.supabase.co';
-  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || 'demo-service-role-key';
+  const rawSupabaseUrl = (process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim();
+  const rawServiceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  const rawAnonKey = (process.env.SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
 
-  const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY?.trim() || '';
+  const isSupabaseConfigured = Boolean(
+    rawSupabaseUrl &&
+    isValidHttpUrl(rawSupabaseUrl) &&
+    isNotPlaceholder(rawSupabaseUrl) &&
+    rawServiceKey &&
+    rawServiceKey.length > 20 &&
+    isNotPlaceholder(rawServiceKey)
+  );
+
+  const SUPABASE_URL = isSupabaseConfigured ? rawSupabaseUrl : '';
+  const SUPABASE_SERVICE_ROLE_KEY = isSupabaseConfigured ? rawServiceKey : '';
+  const SUPABASE_ANON_KEY = isNotPlaceholder(rawAnonKey) ? rawAnonKey : '';
 
   const GOOGLE_IMAGE_MODEL = process.env.GOOGLE_IMAGE_MODEL?.trim() || 'gemini-3.1-flash-image';
   const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY?.trim() || process.env.GEMINI_API_KEY?.trim();
@@ -57,6 +94,7 @@ export function validateEnv(): EnvConfig {
     PERFECTCORP_API_KEY,
     PERFECTCORP_API_HOST,
     TRY_ON_RESULTS_TTL_DAYS,
+    isSupabaseConfigured,
   };
 }
 
