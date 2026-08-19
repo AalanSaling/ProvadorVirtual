@@ -11,7 +11,7 @@ async function runTests() {
   const originalHost = process.env.PERFECTCORP_API_HOST;
 
   process.env.PERFECTCORP_API_KEY = 'test-perfectcorp-key';
-  process.env.PERFECTCORP_API_HOST = 'https://s2s.perfectcorp.com';
+  process.env.PERFECTCORP_API_HOST = 'https://yce-api-01.makeupar.com';
 
   const validInput: TryOnInput = {
     personImage: 'https://cdn.example.com/person_subject.jpg',

@@ -15,7 +15,7 @@
     "dev": "tsx server.ts",
     "build": "npx expo export -p web --output-dir dist-web && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "postinstall": "mkdir -p node_modules/react-native/Libraries/Core && echo '// InitializeCore stub' > node_modules/react-native/Libraries/Core/InitializeCore.js && echo \"module.exports = require('react-native-web');\" > node_modules/react-native/index.js",
-    "test": "tsx server/tests/phase1.test.ts && tsx server/tests/phase2a_perfectcorp.test.ts && tsx server/tests/phase4_semantic_pipeline.test.ts && tsx server/tests/phase4_6_credentials_isolation.test.ts && tsx server/tests/phase6_product_tryon_integrity.test.ts && tsx server/tests/phase6_3_audit.test.ts && tsx server/tests/phase6_4_ab_test.test.ts && tsx server/tests/phase6_5_provider_auth.test.ts && tsx server/tests/phase6_5_1_supabase_auth_session.test.ts && tsx server/tests/phase6_6_supabase_auth_correction.test.ts",
+    "test": "tsx server/tests/phase1.test.ts && tsx server/tests/phase2a_perfectcorp.test.ts && tsx server/tests/phase4_semantic_pipeline.test.ts && tsx server/tests/phase4_6_credentials_isolation.test.ts && tsx server/tests/phase6_product_tryon_integrity.test.ts && tsx server/tests/phase6_3_audit.test.ts && tsx server/tests/phase6_4_ab_test.test.ts && tsx server/tests/phase6_5_provider_auth.test.ts && tsx server/tests/phase6_5_1_supabase_auth_session.test.ts && tsx server/tests/phase6_6_supabase_auth_correction.test.ts && tsx server/tests/phase6_6_2_supabase_auth_consolidation.test.ts",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

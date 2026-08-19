@@ -78,7 +78,7 @@ export function validateEnv(): EnvConfig {
   const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY?.trim() || process.env.GEMINI_API_KEY?.trim();
 
   const PERFECTCORP_API_KEY = process.env.PERFECTCORP_API_KEY?.trim() || process.env.PERFECT_CORP_API_KEY?.trim();
-  const PERFECTCORP_API_HOST = process.env.PERFECTCORP_API_HOST?.trim() || 'https://s2s.perfectcorp.com';
+  const PERFECTCORP_API_HOST = process.env.PERFECTCORP_API_HOST?.trim() || 'https://yce-api-01.makeupar.com';
 
   const TRY_ON_RESULTS_TTL_DAYS = parseInt(process.env.TRY_ON_RESULTS_TTL_DAYS || '7', 10);
 

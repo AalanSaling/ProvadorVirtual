@@ -13,6 +13,11 @@ healthRouter.get('/health', (req, res) => {
     status: 'ok',
     system: 'Provador Virtual Greenfield API',
     environment: env.NODE_ENV,
+    supabase: {
+      supabaseServerConfigured: env.isSupabaseConfigured,
+      supabaseUrlConfigured: Boolean(env.SUPABASE_URL),
+      supabaseServiceRoleConfigured: Boolean(env.SUPABASE_SERVICE_ROLE_KEY),
+    },
     modelConfiguration: {
       googleImageModel: env.GOOGLE_IMAGE_MODEL,
       perfectCorpHost: env.PERFECTCORP_API_HOST,

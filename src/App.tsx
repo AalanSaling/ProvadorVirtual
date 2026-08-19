@@ -22,7 +22,7 @@ function AppContent() {
     );
   }
 
-  if (status === 'unauthenticated') {
+  if (status !== 'authenticated') {
     return <LoginScreen />;
   }
 

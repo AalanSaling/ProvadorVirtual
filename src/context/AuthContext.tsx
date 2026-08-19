@@ -9,7 +9,7 @@ import {
   checkSupabaseConnectivity,
 } from '../lib/supabase';
 
-export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
+export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated' | 'configuration_error' | 'network_error';
 
 export interface SignUpResult {
   error: Error | null;
@@ -23,6 +23,7 @@ export interface AuthContextType {
   session: Session | null;
   isConfigured: boolean;
   configStatus: SupabaseConfigStatus;
+  connectivityStatus: 'HEALTHY' | 'NETWORK_ERROR' | 'CONFIG_ERROR' | 'UNKNOWN';
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string) => Promise<SignUpResult>;
   signOut: () => Promise<void>;
@@ -46,13 +47,13 @@ export function notifySessionExpired() {
   });
 }
 
-function mapSupabaseAuthError(rawMessage: string): string {
+export function mapSupabaseAuthError(rawMessage: string): string {
   const lower = rawMessage.toLowerCase();
   if (lower.includes('invalid login credentials') || lower.includes('invalid_credentials')) {
     return 'E-mail ou senha incorretos.';
   }
   if (lower.includes('email not confirmed') || lower.includes('email_not_confirmed')) {
-    return 'E-mail ainda não confirmado. Verifique sua caixa de entrada para confirmar a conta antes de entrar.';
+    return 'E-mail ainda não confirmado. Verifique sua caixa de entrada.';
   }
   if (lower.includes('user already registered') || lower.includes('user_already_exists')) {
     return 'Este e-mail já está cadastrado. Alterne para a aba "Entrar".';
@@ -66,8 +67,14 @@ function mapSupabaseAuthError(rawMessage: string): string {
   if (lower.includes('rate limit') || lower.includes('too many requests')) {
     return 'Muitas tentativas em pouco tempo. Aguarde alguns instantes.';
   }
-  if (lower.includes('failed to fetch') || lower.includes('network') || lower.includes('econnrefused')) {
-    return 'Falha de conexão com o Supabase. Verifique sua internet e a URL configurada.';
+  if (
+    lower.includes('failed to fetch') ||
+    lower.includes('network') ||
+    lower.includes('econnrefused') ||
+    lower.includes('network_error') ||
+    lower.includes('timeout')
+  ) {
+    return 'Não foi possível conectar ao serviço. Verifique sua internet e tente novamente.';
   }
   return rawMessage;
 }
@@ -76,6 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
+  const [connectivityStatus, setConnectivityStatus] = useState<'HEALTHY' | 'NETWORK_ERROR' | 'CONFIG_ERROR' | 'UNKNOWN'>('UNKNOWN');
   const configStatus = getSupabaseConfigStatus();
 
   const applySession = useCallback((currentSession: Session | null) => {
@@ -103,26 +111,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let isMounted = true;
 
-    if (!isSupabaseConfigured) {
-      applySession(null);
-      return;
-    }
-
     async function initAuth() {
+      // Step 1: Check Supabase Config Status
+      if (!isSupabaseConfigured) {
+        if (isMounted) {
+          setConnectivityStatus('CONFIG_ERROR');
+          setStatus('configuration_error');
+          setUser(null);
+          setSession(null);
+        }
+        return;
+      }
+
+      // Step 2: Check Real Connectivity with Supabase
       try {
-        const { data, error } = await supabase.auth.getSession();
-        if (error || !data?.session) {
-          if (isMounted) {
-            applySession(null);
-          }
+        const conn = await checkSupabaseConnectivity();
+        if (!isMounted) return;
+
+        if (conn.status === 'CONFIG_ERROR') {
+          setConnectivityStatus('CONFIG_ERROR');
+          setStatus('configuration_error');
+          setUser(null);
+          setSession(null);
           return;
         }
-        if (isMounted) {
-          applySession(data.session);
+
+        if (conn.status === 'NETWORK_ERROR') {
+          setConnectivityStatus('NETWORK_ERROR');
+          setStatus('network_error');
+          setUser(null);
+          setSession(null);
+          return;
         }
+
+        setConnectivityStatus('HEALTHY');
+
+        // Step 3: Get active session (persistSession from storage)
+        const { data, error } = await supabase.auth.getSession();
+        if (!isMounted) return;
+
+        if (error || !data?.session?.access_token || !data.session.user) {
+          setStatus('unauthenticated');
+          setUser(null);
+          setSession(null);
+          return;
+        }
+
+        applySession(data.session);
       } catch {
         if (isMounted) {
-          applySession(null);
+          setConnectivityStatus('NETWORK_ERROR');
+          setStatus('network_error');
+          setUser(null);
+          setSession(null);
         }
       }
     }
@@ -264,6 +305,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         session,
         isConfigured: isSupabaseConfigured,
         configStatus,
+        connectivityStatus,
         signIn,
         signUp,
         signOut,

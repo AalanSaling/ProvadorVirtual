@@ -27,7 +27,7 @@ export class PerfectCorpTryOnProvider implements ITryOnProvider {
   }
 
   private getApiHost(): string | null {
-    const host = process.env.PERFECTCORP_API_HOST || 'https://api.perfectcorp.com';
+    const host = process.env.PERFECTCORP_API_HOST || 'https://yce-api-01.makeupar.com';
     return host.trim().replace(/\/+$/, '');
   }
 

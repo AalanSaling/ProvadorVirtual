@@ -30,7 +30,7 @@ import { useAuth } from '../context/AuthContext';
 import { colors, spacing, borderRadius, shadows } from '../theme/theme';
 
 export function LoginScreen() {
-  const { user, signIn, signUp, signOut, isConfigured, configStatus } = useAuth();
+  const { user, status, signIn, signUp, signOut, isConfigured, configStatus, connectivityStatus } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
@@ -123,11 +123,11 @@ export function LoginScreen() {
               <Text style={styles.brandSubtitle}>PROVADOR VIRTUAL DE ALTA COSTURA</Text>
             </View>
 
-            {/* Supabase Diagnostic Status Banner (Requirement 4) */}
+            {/* Supabase Diagnostic Status Banner (Requirement 16) */}
             <View style={[styles.diagnosticCard, !isConfigured && styles.diagnosticCardWarning]}>
               <View style={styles.diagHeaderRow}>
                 <Server size={14} color={isConfigured ? colors.success : colors.accent} />
-                <Text style={styles.diagTitle}>SUPABASE AUTH CONFIG</Text>
+                <Text style={styles.diagTitle}>SUPABASE AUTH DIAGNÓSTICO</Text>
                 <View
                   style={[
                     styles.statusPill,
@@ -140,25 +140,55 @@ export function LoginScreen() {
                       { color: isConfigured ? colors.success : colors.error },
                     ]}
                   >
-                    {isConfigured ? 'ONLINE' : 'NÃO CONFIGURADO'}
+                    {isConfigured ? 'CONFIGURADO' : 'NÃO CONFIGURADO'}
                   </Text>
                 </View>
               </View>
 
               <View style={styles.diagDetailsRow}>
                 <View style={styles.diagItem}>
-                  <Text style={styles.diagItemLabel}>URL:</Text>
+                  <Text style={styles.diagItemLabel}>Supabase:</Text>
                   <Text style={styles.diagItemValue}>
-                    {configStatus.hasUrl ? `configurada (${configStatus.urlHost || 'host'})` : 'ausente'}
+                    {isConfigured ? 'Configurado' : 'Não configurado'}
                   </Text>
                 </View>
                 <View style={styles.diagItem}>
-                  <Text style={styles.diagItemLabel}>ANON KEY:</Text>
+                  <Text style={styles.diagItemLabel}>Conectividade:</Text>
+                  <Text
+                    style={[
+                      styles.diagItemValue,
+                      {
+                        color:
+                          connectivityStatus === 'HEALTHY'
+                            ? colors.success
+                            : connectivityStatus === 'NETWORK_ERROR'
+                            ? colors.error
+                            : colors.textSecondary,
+                      },
+                    ]}
+                  >
+                    {connectivityStatus === 'HEALTHY'
+                      ? 'Online'
+                      : connectivityStatus === 'NETWORK_ERROR'
+                      ? 'Indisponível'
+                      : isConfigured
+                      ? 'Online'
+                      : 'Indisponível'}
+                  </Text>
+                </View>
+                <View style={styles.diagItem}>
+                  <Text style={styles.diagItemLabel}>Sessão:</Text>
                   <Text style={styles.diagItemValue}>
-                    {configStatus.hasAnonKey ? 'configurada' : 'ausente'}
+                    {status === 'authenticated' ? 'Autenticado' : 'Não autenticado'}
                   </Text>
                 </View>
               </View>
+
+              {configStatus.urlHost && (
+                <Text style={[styles.diagHelpText, { marginTop: 4, color: colors.textTertiary }]}>
+                  Host: {configStatus.urlHost}
+                </Text>
+              )}
 
               {!isConfigured && (
                 <Text style={styles.diagHelpText}>

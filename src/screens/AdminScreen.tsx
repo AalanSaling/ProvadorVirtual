@@ -595,6 +595,12 @@ export function AdminScreen() {
                   </View>
                 </View>
 
+                {/* Endpoint da Perfect Corp (Configuração do Servidor/Provider) */}
+                <View style={styles.endpointInfoRow}>
+                  <Text style={styles.endpointInfoLabel}>Endpoint da Perfect Corp:</Text>
+                  <Text style={styles.endpointInfoValue}>https://yce-api-01.makeupar.com</Text>
+                </View>
+
                 {/* Masked Credential Box or Connect CTA */}
                 {perfectCorpConnected ? (
                   <>
@@ -2196,5 +2202,26 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '600',
     color: colors.textPrimary,
+  },
+  endpointInfoRow: {
+    backgroundColor: colors.surfaceLight,
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    gap: 2,
+  },
+  endpointInfoLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.textTertiary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  endpointInfoValue: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.accent,
   },
 });
