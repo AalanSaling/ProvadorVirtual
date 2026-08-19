@@ -2,18 +2,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const rawUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
-const rawKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
-
-function isValidHttpUrl(stringUrl: string): boolean {
-  if (!stringUrl) return false;
-  try {
-    const url = new URL(stringUrl);
-    return url.protocol === 'http:' || url.protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
+declare const window: any;
 
 function isNotPlaceholder(val: string): boolean {
   if (!val) return false;
@@ -29,6 +18,52 @@ function isNotPlaceholder(val: string): boolean {
     lower !== 'undefined'
   );
 }
+
+function isValidHttpUrl(stringUrl: string): boolean {
+  if (!stringUrl) return false;
+  try {
+    const url = new URL(stringUrl);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function resolvePublicConfig(): { url: string; key: string } {
+  // 1. Check window.__EXPO_PUBLIC_ENV__ (injected into HTML by Express server)
+  let windowUrl = '';
+  let windowKey = '';
+  if (typeof window !== 'undefined' && window?.__EXPO_PUBLIC_ENV__) {
+    const envObj = window.__EXPO_PUBLIC_ENV__;
+    if (envObj.EXPO_PUBLIC_SUPABASE_URL && isNotPlaceholder(envObj.EXPO_PUBLIC_SUPABASE_URL)) {
+      windowUrl = String(envObj.EXPO_PUBLIC_SUPABASE_URL).trim();
+    }
+    if (envObj.EXPO_PUBLIC_SUPABASE_ANON_KEY && isNotPlaceholder(envObj.EXPO_PUBLIC_SUPABASE_ANON_KEY)) {
+      windowKey = String(envObj.EXPO_PUBLIC_SUPABASE_ANON_KEY).trim();
+    }
+  }
+
+  // 2. Check process.env (inlined at build time by Expo/Metro)
+  let envUrl = '';
+  let envKey = '';
+  if (typeof process !== 'undefined' && process?.env) {
+    const pUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
+    if (pUrl && isNotPlaceholder(pUrl)) {
+      envUrl = pUrl;
+    }
+    const pKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
+    if (pKey && isNotPlaceholder(pKey)) {
+      envKey = pKey;
+    }
+  }
+
+  const url = windowUrl || envUrl;
+  const key = windowKey || envKey;
+
+  return { url, key };
+}
+
+const { url: rawUrl, key: rawKey } = resolvePublicConfig();
 
 export const isSupabaseConfigured = Boolean(
   rawUrl &&

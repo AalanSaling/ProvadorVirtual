@@ -37,15 +37,45 @@ app.use('/api/try-on', tryOnRouter);
 app.use('/api/products', catalogRouter);
 app.use('/api/store', storeRouter);
 
-// 4. Serve Expo Web Static Bundle for AI Studio Preview
+// 4. Serve Expo Web Static Bundle for AI Studio Preview with safe public env injection
 const distWebPath = path.join(__dirname, 'dist-web');
 if (fs.existsSync(distWebPath)) {
-  app.use(express.static(distWebPath));
+  const getInjectedHtml = () => {
+    try {
+      const rawHtml = fs.readFileSync(path.join(distWebPath, 'index.html'), 'utf-8');
+      // Strictly ONLY inject the two public client-side credentials
+      const publicEnv = {
+        EXPO_PUBLIC_SUPABASE_URL: (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim(),
+        EXPO_PUBLIC_SUPABASE_ANON_KEY: (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim(),
+      };
+      const scriptTag = `<script id="expo-public-env">window.__EXPO_PUBLIC_ENV__ = ${JSON.stringify(publicEnv)};</script>`;
+      if (rawHtml.includes('</head>')) {
+        return rawHtml.replace('</head>', `${scriptTag}</head>`);
+      }
+      return `${scriptTag}${rawHtml}`;
+    } catch {
+      return fs.readFileSync(path.join(distWebPath, 'index.html'), 'utf-8');
+    }
+  };
+
+  app.get('/', (req, res) => {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(getInjectedHtml());
+  });
+
+  app.get('/index.html', (req, res) => {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(getInjectedHtml());
+  });
+
+  app.use(express.static(distWebPath, { index: false }));
+
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api')) {
       return next();
     }
-    res.sendFile(path.join(distWebPath, 'index.html'));
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(getInjectedHtml());
   });
 } else {
   app.get('/', (req, res) => {
