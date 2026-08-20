@@ -155,14 +155,35 @@ export function TryOnScreen({ route }: any) {
     try {
       const manipResult = await ImageManipulator.manipulateAsync(
         uri,
-        [{ resize: { width: 768 } }],
-        { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG }
+        [{ resize: { width: 1024 } }],
+        { compress: 0.88, format: ImageManipulator.SaveFormat.JPEG, base64: true }
       );
-      finalUri = manipResult.uri;
-      setPersonImage(finalUri);
+      if (manipResult.base64) {
+        finalUri = `data:image/jpeg;base64,${manipResult.base64}`;
+      } else if (manipResult.uri && !manipResult.uri.startsWith('blob:')) {
+        finalUri = manipResult.uri;
+      }
     } catch {
-      setPersonImage(uri);
+      // Fallback
     }
+
+    // On Web, if finalUri is still a blob: URI, convert to base64 via FileReader
+    if (typeof window !== 'undefined' && finalUri.startsWith('blob:')) {
+      try {
+        const resp = await fetch(finalUri);
+        const blob = await resp.blob();
+        finalUri = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : uri);
+          reader.onerror = () => resolve(uri);
+          reader.readAsDataURL(blob);
+        });
+      } catch {
+        // keep finalUri
+      }
+    }
+
+    setPersonImage(finalUri);
 
     // Run person quality check (advisory and non-blocking)
     setValidatingPerson(true);

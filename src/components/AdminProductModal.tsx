@@ -130,9 +130,26 @@ export function AdminProductModal({
       setPreparationInfo(data);
       if (data.preparedImageUrl) {
         setReferencePhotoUrl(data.preparedImageUrl);
+        if (data.status === 'ready') {
+          Alert.alert(
+            'Preparação IA Concluída',
+            'A roupa foi isolada com sucesso e validada pelo Quality Gate para o provador virtual.'
+          );
+        } else if (data.status === 'needs_review') {
+          Alert.alert(
+            'Preparação Concluída com Aviso',
+            'A peça foi isolada e está pronta para uso, mas recomendamos uma conferência visual prévia.'
+          );
+        }
+      } else if (data.status === 'not_configured') {
         Alert.alert(
-          'Preparação IA Concluída',
-          'A roupa foi isolada com sucesso e validada pelo Quality Gate para o provador virtual.'
+          'Preparação Automática Indisponível',
+          'A chave de API do Google Gemini não está configurada no servidor. Configure a variável GEMINI_API_KEY.'
+        );
+      } else {
+        Alert.alert(
+          'Não foi possível preparar esta peça',
+          data.qualityGate?.errorMessage || 'Tente usar outra foto com a roupa mais visível ou fundo mais simples.'
         );
       }
     } catch (e: any) {
@@ -420,7 +437,15 @@ export function AdminProductModal({
 
                 {/* Status Badge */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 6 }}>
-                  {referencePhotoUrl ? (
+                  {preparationInfo?.status === 'not_configured' ? (
+                    <View style={[styles.gateBadge, { backgroundColor: '#F3F4F6' }]}>
+                      <Text style={[styles.gateBadgeText, { color: '#4B5563' }]}>PREPARAÇÃO INDISPONÍVEL (SEM CHAVE IA)</Text>
+                    </View>
+                  ) : preparationInfo?.status === 'needs_review' ? (
+                    <View style={[styles.gateBadge, { backgroundColor: '#FEF3C7' }]}>
+                      <Text style={[styles.gateBadgeText, { color: '#B45309' }]}>REVISÃO RECOMENDADA</Text>
+                    </View>
+                  ) : referencePhotoUrl ? (
                     <View style={styles.gateBadge}>
                       <Check size={13} color="#15803D" />
                       <Text style={styles.gateBadgeText}>PRONTA PARA PROVAR</Text>
@@ -437,7 +462,11 @@ export function AdminProductModal({
                 </View>
 
                 <Text style={styles.aiActionDesc}>
-                  {referencePhotoUrl
+                  {preparationInfo?.status === 'not_configured'
+                    ? 'A preparação automática da peça requer a configuração da chave de IA no servidor. Cadastre sua GEMINI_API_KEY.'
+                    : preparationInfo?.status === 'needs_review'
+                    ? 'A peça foi isolada e está disponível para prova. Confira a imagem isolada abaixo.'
+                    : referencePhotoUrl
                     ? 'A peça foi isolada e validada pelo Quality Gate com modelo removido e fundo neutro.'
                     : 'A roupa é tratada e isolada de forma 100% transparente pelo motor de IA.'}
                 </Text>

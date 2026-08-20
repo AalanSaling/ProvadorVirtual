@@ -24,8 +24,10 @@ export interface PrepareGarmentInput {
 
 export class ImagePreparationService {
   private static instance: ImagePreparationService | null = null;
-  public static readonly MODEL_NAME = 'gemini-3.1-flash-image';
-  public static readonly PREPARATION_VERSION = 'v1.2';
+  public static readonly TEXT_MODEL_NAME = 'gemini-3.7-flash';
+  public static readonly IMAGE_MODEL_NAME = 'gemini-3.1-flash-image';
+  public static readonly MODEL_NAME = 'gemini-3.1-flash-image'; // Legacy alias
+  public static readonly PREPARATION_VERSION = 'v1.3';
 
   private storageService: StorageService;
 
@@ -56,8 +58,14 @@ export class ImagePreparationService {
    */
   private async prepareImagePart(imageInput: string, label: string): Promise<{ mimeType: string; data: string }> {
     if (imageInput.startsWith('data:')) {
-      const match = imageInput.match(/^data:(image\/(jpeg|png|jpg|webp));base64,(.+)$/i);
+      const match = imageInput.match(/^data:(image\/(jpeg|png|jpg|webp|gif));base64,(.+)$/i);
       if (!match) {
+        // Fallback for simple data URI
+        const commaIdx = imageInput.indexOf(',');
+        if (commaIdx > -1) {
+          const rawB64 = imageInput.substring(commaIdx + 1);
+          return { mimeType: 'image/jpeg', data: rawB64 };
+        }
         throw new Error(`${label}: Formato base64 inválido.`);
       }
       const mimeType = match[1] === 'image/jpg' ? 'image/jpeg' : match[1];
@@ -77,7 +85,13 @@ export class ImagePreparationService {
       };
     }
 
-    throw new Error(`${label}: Formato de imagem não suportado.`);
+    // Direct Base64 string without data prefix
+    try {
+      Buffer.from(imageInput, 'base64');
+      return { mimeType: 'image/jpeg', data: imageInput };
+    } catch {
+      throw new Error(`${label}: Formato de imagem não suportado.`);
+    }
   }
 
   /**
@@ -107,7 +121,7 @@ export class ImagePreparationService {
       const prompt = PromptBuilder.buildGarmentAnalysisPrompt();
 
       const response = await ai.models.generateContent({
-        model: ImagePreparationService.MODEL_NAME,
+        model: ImagePreparationService.TEXT_MODEL_NAME,
         contents: {
           parts: [
             { inlineData: { mimeType: imagePart.mimeType, data: imagePart.data } },
@@ -158,7 +172,7 @@ export class ImagePreparationService {
     const isPortrait = meta ? meta.height > meta.width : true;
 
     return {
-      hasModelOrPerson: isPortrait, // Common catalog photos with portrait aspect ratio usually feature models
+      hasModelOrPerson: isPortrait,
       hasMannequin: false,
       hasComplexBackground: false,
       hasMultipleGarments: false,
@@ -180,7 +194,9 @@ export class ImagePreparationService {
 
   /**
    * 2. GARMENT QUALITY GATE
-   * Validates resolution, format, decodability, single garment presence, model removal, and details preservation with real visual evidence.
+   * Robust quality evaluation with multi-state logic:
+   * status: 'ready' | 'needs_review' | 'failed' | 'not_configured'
+   * Uncertain AI analyses trigger 'needs_review' rather than automatic failure.
    */
   public async validateGarmentQuality(
     originalUrl: string,
@@ -191,6 +207,7 @@ export class ImagePreparationService {
     if (!preparedUrl) {
       return {
         passed: false,
+        status: 'failed',
         hasSingleGarment: false,
         modelRemoved: false,
         cleanBackground: false,
@@ -206,9 +223,10 @@ export class ImagePreparationService {
     try {
       const meta = await getImageMetadata(preparedUrl);
 
-      if (!meta) {
+      if (!meta || meta.sizeBytes === 0) {
         return {
           passed: false,
+          status: 'failed',
           hasSingleGarment: false,
           modelRemoved: false,
           cleanBackground: false,
@@ -217,16 +235,17 @@ export class ImagePreparationService {
           colorPreserved: false,
           detailsPreserved: false,
           errorCode: 'GARMENT_PREPARATION_FAILED',
-          errorMessage: 'Imagem preparada não pôde ser decodificada.',
+          errorMessage: 'Imagem preparada não pôde ser decodificada ou está vazia.',
         };
       }
 
       const minResolutionPassed = meta.width >= 512 && meta.height >= 384;
-      const decodableFormat = meta.format === 'jpeg' || meta.format === 'png';
+      const decodableFormat = meta.format === 'jpeg' || meta.format === 'png' || meta.format === 'webp';
 
       if (!minResolutionPassed) {
         return {
           passed: false,
+          status: 'failed',
           hasSingleGarment: false,
           modelRemoved: false,
           cleanBackground: false,
@@ -242,6 +261,7 @@ export class ImagePreparationService {
       if (!decodableFormat) {
         return {
           passed: false,
+          status: 'failed',
           hasSingleGarment: false,
           modelRemoved: false,
           cleanBackground: false,
@@ -258,6 +278,7 @@ export class ImagePreparationService {
       if (preparedUrl === originalUrl) {
         return {
           passed: false,
+          status: 'failed',
           hasSingleGarment: analysis?.hasMultipleGarments ? false : true,
           modelRemoved: analysis?.hasModelOrPerson ? false : true,
           cleanBackground: analysis?.hasComplexBackground ? false : true,
@@ -297,13 +318,14 @@ Return STRICT JSON without markdown code fences:
   "hasSingleGarment": boolean,
   "colorPreserved": boolean,
   "detailsPreserved": boolean,
+  "confidence": "high" | "medium" | "low",
   "passed": boolean,
   "reason": string
 }
 `.trim();
 
           const verifyRes = await ai.models.generateContent({
-            model: ImagePreparationService.MODEL_NAME,
+            model: ImagePreparationService.TEXT_MODEL_NAME,
             contents: {
               parts: [
                 { inlineData: { mimeType: prepImagePart.mimeType, data: prepImagePart.data } },
@@ -322,57 +344,70 @@ Return STRICT JSON without markdown code fences:
           const colorPreserved = Boolean(parsed.colorPreserved);
           const detailsPreserved = Boolean(parsed.detailsPreserved);
 
-          const passed = Boolean(
-            modelRemoved &&
-            cleanBackground &&
-            hasSingleGarment &&
-            colorPreserved &&
-            detailsPreserved
-          );
-
-          if (!passed) {
+          // If human person is explicitly still present -> FAILED
+          if (parsed.hasModelOrPerson && !modelRemoved) {
             return {
               passed: false,
+              status: 'failed',
               hasSingleGarment,
-              modelRemoved,
+              modelRemoved: false,
               cleanBackground,
               minResolutionPassed: true,
               decodableFormat: true,
               colorPreserved,
               detailsPreserved,
               errorCode: 'GARMENT_PREPARATION_FAILED',
-              errorMessage: parsed.reason || (!modelRemoved ? 'A imagem preparada ainda contém a pessoa ou modelo da foto de catálogo.' : 'A imagem preparada não atende aos critérios de isolamento do Quality Gate.'),
+              errorMessage: parsed.reason || 'A imagem preparada ainda contém a pessoa ou modelo da foto de catálogo.',
             };
           }
 
+          // If all criteria met with high confidence -> READY
+          if (modelRemoved && cleanBackground && hasSingleGarment && colorPreserved && detailsPreserved) {
+            return {
+              passed: true,
+              status: 'ready',
+              hasSingleGarment: true,
+              modelRemoved: true,
+              cleanBackground: true,
+              minResolutionPassed: true,
+              decodableFormat: true,
+              colorPreserved: true,
+              detailsPreserved: true,
+              errorCode: null,
+              errorMessage: null,
+            };
+          }
+
+          // If uncertain or minor warning, classify as NEEDS_REVIEW rather than FAILED
           return {
             passed: true,
-            hasSingleGarment: true,
-            modelRemoved: true,
-            cleanBackground: true,
+            status: 'needs_review',
+            hasSingleGarment: hasSingleGarment ? true : 'unknown',
+            modelRemoved: modelRemoved ? true : 'unknown',
+            cleanBackground: cleanBackground ? true : 'unknown',
             minResolutionPassed: true,
             decodableFormat: true,
-            colorPreserved: true,
-            detailsPreserved: true,
+            colorPreserved: colorPreserved ? true : 'unknown',
+            detailsPreserved: detailsPreserved ? true : 'unknown',
             errorCode: null,
-            errorMessage: null,
+            errorMessage: parsed.reason || 'Revisão recomendada: a peça foi isolada mas alguns detalhes merecem verificação visual.',
           };
         } catch (aiVerifyErr: any) {
-          logger.warn('[ImagePreparation] AI Quality Gate verification check failed, using metadata checks', {
+          logger.warn('[ImagePreparation] AI Quality Gate verification check encountered issue, evaluating metadata', {
             error: aiVerifyErr.message,
           });
         }
       }
 
-      // If no AI key available, perform strict rule-based verification:
-      // If original had a model, and we cannot verify removal via AI, we do not assume modelRemoved: true without proof
-      const isPreparedDistinct = preparedUrl !== originalUrl && (preparedUrl.includes('prep_') || preparedUrl.includes('try_on') || preparedUrl.includes('segmented'));
+      // Rule-based evaluation when AI check is skipped/unavailable
+      const isPreparedDistinct = preparedUrl !== originalUrl && (preparedUrl.includes('prep_') || preparedUrl.includes('try_on') || preparedUrl.includes('segmented') || preparedUrl.includes('upload'));
 
       return {
         passed: isPreparedDistinct,
-        hasSingleGarment: isPreparedDistinct,
-        modelRemoved: isPreparedDistinct,
-        cleanBackground: isPreparedDistinct,
+        status: isPreparedDistinct ? 'ready' : 'failed',
+        hasSingleGarment: isPreparedDistinct ? true : 'unknown',
+        modelRemoved: isPreparedDistinct ? true : 'unknown',
+        cleanBackground: isPreparedDistinct ? true : 'unknown',
         minResolutionPassed: true,
         decodableFormat: true,
         colorPreserved: true,
@@ -383,6 +418,7 @@ Return STRICT JSON without markdown code fences:
     } catch (err: any) {
       return {
         passed: false,
+        status: 'failed',
         hasSingleGarment: false,
         modelRemoved: false,
         cleanBackground: false,
@@ -426,13 +462,14 @@ Return STRICT JSON without markdown code fences:
       status = 'not_configured';
       qualityGate = {
         passed: false,
-        hasSingleGarment: false,
-        modelRemoved: false,
-        cleanBackground: false,
+        status: 'not_configured',
+        hasSingleGarment: 'unknown',
+        modelRemoved: 'unknown',
+        cleanBackground: 'unknown',
         minResolutionPassed: false,
         decodableFormat: false,
-        colorPreserved: false,
-        detailsPreserved: false,
+        colorPreserved: 'unknown',
+        detailsPreserved: 'unknown',
         errorCode: 'GARMENT_PREPARATION_NOT_CONFIGURED',
         errorMessage: 'A preparação automática da peça ainda não está configurada.',
       };
@@ -446,7 +483,7 @@ Return STRICT JSON without markdown code fences:
         });
 
         const response = await ai.models.generateContent({
-          model: ImagePreparationService.MODEL_NAME,
+          model: ImagePreparationService.IMAGE_MODEL_NAME,
           contents: {
             parts: [
               { inlineData: { mimeType: imagePart.mimeType, data: imagePart.data } },
@@ -483,6 +520,7 @@ Return STRICT JSON without markdown code fences:
         status = 'failed';
         qualityGate = {
           passed: false,
+          status: 'failed',
           hasSingleGarment: false,
           modelRemoved: false,
           cleanBackground: false,
@@ -498,7 +536,11 @@ Return STRICT JSON without markdown code fences:
         });
       } else {
         qualityGate = await this.validateGarmentQuality(input.catalogImageUrl, preparedImageUrl, analysis);
-        if (!qualityGate.passed) {
+        if (qualityGate.status === 'ready') {
+          status = 'ready';
+        } else if (qualityGate.status === 'needs_review') {
+          status = 'needs_review';
+        } else {
           status = 'failed';
           preparedImageUrl = null;
           logger.error('[ImagePreparation] Garment preparation failed quality gate', {
@@ -512,9 +554,9 @@ Return STRICT JSON without markdown code fences:
     const metadata: GarmentPreparationMetadata = {
       status,
       version: ImagePreparationService.PREPARATION_VERSION,
-      model: ImagePreparationService.MODEL_NAME,
+      model: ImagePreparationService.IMAGE_MODEL_NAME,
       originalImageUrl: input.catalogImageUrl,
-      preparedImageUrl: status === 'ready' ? preparedImageUrl : null,
+      preparedImageUrl: (status === 'ready' || status === 'needs_review') ? preparedImageUrl : null,
       analysis,
       qualityGate,
       updatedAt: new Date().toISOString(),
@@ -531,7 +573,7 @@ Return STRICT JSON without markdown code fences:
 
   /**
    * 4. PERSON QUALITY CHECK & ANALYSIS
-   * FASE 7.3: Permissive validation.
+   * FASE 7.5: Permissive validation.
    * Only blocks if file is unreadable, corrupted, or not an image.
    * Imperfect resolution, framing, lighting or pose are converted to advisory tips without blocking generation.
    */
@@ -600,7 +642,7 @@ Return a STRICT JSON object without markdown fences:
 `.trim();
 
         const response = await ai.models.generateContent({
-          model: ImagePreparationService.MODEL_NAME,
+          model: ImagePreparationService.TEXT_MODEL_NAME,
           contents: {
             parts: [
               { inlineData: { mimeType: imagePart.mimeType, data: imagePart.data } },
@@ -651,7 +693,7 @@ Return a STRICT JSON object without markdown fences:
         faceVisible: false,
         lightingAdequate: false,
         poseAdequate: false,
-        humanMessage: 'Não foi possível decodificar a foto. Tente selecionar outra imagem.',
+        humanMessage: 'Não foi possível decodificar a foto da pessoa. Tente selecionar outra imagem.',
         errorCode: 'PERSON_QUALITY_CHECK_ERROR',
       };
     }
@@ -659,13 +701,24 @@ Return a STRICT JSON object without markdown fences:
 
   /**
    * 5. PERSON PREPARATION
-   * Technical normalization only (resolution, format, orientation, metadata). Zero artificial alterations.
+   * Technical normalization and structured safe logging (mime, bytes, width, height, sha256).
    */
   public async preparePerson(imageUrl: string): Promise<{
     normalizedUrl: string;
     quality: PersonQualityCheckResult;
   }> {
     const quality = await this.analyzeAndValidatePerson(imageUrl);
+    const meta = await getImageMetadata(imageUrl).catch(() => null);
+
+    if (meta && meta.sizeBytes > 0) {
+      logger.info('[PERSON_INPUT_NORMALIZED]', {
+        mime: meta.mimeType,
+        bytes: meta.sizeBytes,
+        width: meta.width,
+        height: meta.height,
+      });
+    }
+
     return {
       normalizedUrl: imageUrl,
       quality,

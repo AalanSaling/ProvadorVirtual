@@ -89,7 +89,7 @@ export class GarmentPreparationService {
       throw err;
     }
 
-    if (prepMeta.status !== 'ready' || !prepMeta.preparedImageUrl) {
+    if ((prepMeta.status !== 'ready' && prepMeta.status !== 'needs_review') || !prepMeta.preparedImageUrl) {
       const userMessage = 'Não conseguimos preparar esta peça. Tente usar outra foto com a roupa mais visível.';
       const err = new Error(userMessage);
       (err as unknown as Record<string, string>).code = 'GARMENT_PREPARATION_FAILED';
@@ -152,7 +152,7 @@ export class GarmentPreparationService {
       apiKey: apiKeyOverride,
     });
 
-    if (prepMeta.status === 'ready' && prepMeta.preparedImageUrl) {
+    if ((prepMeta.status === 'ready' || prepMeta.status === 'needs_review') && prepMeta.preparedImageUrl) {
       // Upsert prepared image as try_on_reference in database and durable storage
       try {
         await this.catalogService.updateTryOnReference(product.id, prepMeta.preparedImageUrl);

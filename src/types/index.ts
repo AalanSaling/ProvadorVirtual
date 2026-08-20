@@ -81,18 +81,19 @@ export interface GarmentVisualAnalysis {
 
 export interface GarmentQualityGateResult {
   passed: boolean;
-  hasSingleGarment: boolean;
-  modelRemoved: boolean;
-  cleanBackground: boolean;
+  status?: 'ready' | 'needs_review' | 'failed' | 'not_configured';
+  hasSingleGarment: boolean | 'unknown';
+  modelRemoved: boolean | 'unknown';
+  cleanBackground: boolean | 'unknown';
   minResolutionPassed: boolean;
   decodableFormat: boolean;
-  colorPreserved: boolean;
-  detailsPreserved: boolean;
+  colorPreserved: boolean | 'unknown';
+  detailsPreserved: boolean | 'unknown';
   errorCode?: string | null;
   errorMessage?: string | null;
 }
 
-export type GarmentPreparationStatus = 'pending' | 'processing' | 'ready' | 'failed' | 'not_configured';
+export type GarmentPreparationStatus = 'pending' | 'processing' | 'ready' | 'needs_review' | 'failed' | 'not_configured';
 
 export interface GarmentPreparationMetadata {
   status: GarmentPreparationStatus;
