@@ -80,3 +80,29 @@ catalogRouter.post('/', requireAuth, requireStoreAdmin, async (req: Authenticate
     res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: err instanceof Error ? err.message : 'Failed to create product.' });
   }
 });
+
+// Admin: Update product
+catalogRouter.put('/:id', requireAuth, requireStoreAdmin, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const productId = req.params.id;
+    const productData: Partial<Product> = req.body;
+
+    const updated = await catalogService.updateProduct(productId, productData);
+    res.json(updated);
+  } catch (err) {
+    logger.error('Error in PUT /api/products/:id', err);
+    res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: err instanceof Error ? err.message : 'Failed to update product.' });
+  }
+});
+
+// Admin: Delete product
+catalogRouter.delete('/:id', requireAuth, requireStoreAdmin, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const productId = req.params.id;
+    const deleted = await catalogService.deleteProduct(productId);
+    res.json({ success: deleted, productId });
+  } catch (err) {
+    logger.error('Error in DELETE /api/products/:id', err);
+    res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: err instanceof Error ? err.message : 'Failed to delete product.' });
+  }
+});

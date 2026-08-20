@@ -115,26 +115,11 @@ export class GarmentPreparationService {
     });
 
     if (prepMeta.status === 'ready' && prepMeta.preparedImageUrl) {
-      // Upsert prepared image as try_on_reference in database
+      // Upsert prepared image as try_on_reference in database and durable storage
       try {
-        const existingRef = product.photos?.find(p => p.type === 'try_on_reference');
-        if (existingRef?.id) {
-          await supabaseAdmin
-            .from('product_photos')
-            .update({
-              storage_path: prepMeta.preparedImageUrl,
-            })
-            .eq('id', existingRef.id);
-        } else {
-          await supabaseAdmin.from('product_photos').insert({
-            product_id: product.id,
-            type: 'try_on_reference',
-            storage_path: prepMeta.preparedImageUrl,
-            sort_order: 1,
-          });
-        }
+        await this.catalogService.updateTryOnReference(product.id, prepMeta.preparedImageUrl);
       } catch (dbErr: any) {
-        logger.warn('[GarmentPreparation] Could not update product_photos table (offline/mock mode)', {
+        logger.warn('[GarmentPreparation] Could not update try_on_reference:', {
           error: dbErr.message,
         });
       }

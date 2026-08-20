@@ -27,12 +27,13 @@ interface TryOnResultModalProps {
 export function TryOnResultModal({
   visible,
   result,
-  productName = 'Vestido Midi Floral Primavera',
+  productName,
   onClose,
   onPickAnotherGarment,
   onChangePhoto,
 }: TryOnResultModalProps) {
   const { t } = useI18n();
+  const displayName = productName || 'Peça Selecionada';
 
   if (!visible || !result || !result.resultImage) return null;
 
@@ -57,7 +58,7 @@ export function TryOnResultModal({
               </View>
               <Text style={styles.title}>{t('yourLookTitle')}</Text>
               <Text style={styles.productName} numberOfLines={1}>
-                {productName}
+                {displayName}
               </Text>
             </View>
 

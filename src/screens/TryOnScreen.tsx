@@ -29,6 +29,7 @@ import { TryOnResultModal } from '../components/TryOnResultModal';
 import { ProductDetailModal } from '../components/ProductDetailModal';
 import { Product, TryOnResult, MultiProviderTryOnResponse } from '../types';
 import { useCatalog } from '../context/CatalogContext';
+import { authenticatedFetch } from '../lib/authenticatedFetch';
 
 export function TryOnScreen({ route }: any) {
   const { t } = useI18n();
@@ -68,7 +69,7 @@ export function TryOnScreen({ route }: any) {
       }
 
       try {
-        const res = await fetch(`/api/store/${currentProduct.storeId}/providers`);
+        const res = await authenticatedFetch(`/api/store/${currentProduct.storeId}/providers`);
         if (res.ok) {
           const data = await res.json();
           const configured = (data.providers || []).filter((p: any) => p.configured);
@@ -230,6 +231,10 @@ export function TryOnScreen({ route }: any) {
 
     setLoading(true);
 
+    console.log(`[TRYON_DIAGNOSTIC] PRODUCT NAME: ${currentProduct.name}`);
+    console.log(`[TRYON_DIAGNOSTIC] PRODUCT ID: ${currentProduct.id}`);
+    console.log(`[TRYON_DIAGNOSTIC] STORE ID: ${storeId}`);
+
     try {
       const payload = {
         storeId,
@@ -238,7 +243,7 @@ export function TryOnScreen({ route }: any) {
         selectedProviders,
       };
 
-      const response = await fetch('/api/try-on/generate', {
+      const response = await authenticatedFetch('/api/try-on/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

@@ -93,6 +93,7 @@ export function CatalogScreen({ navigation }: any) {
   }
 
   function handleSelectForTryOn(product: Product) {
+    console.log(`[CATALOG_SELECT] PRODUCT NAME: ${product.name} | PRODUCT ID: ${product.id} | STORE ID: ${product.storeId}`);
     setSelectedTryOnProduct(product);
     if (navigation && navigation.navigate) {
       navigation.navigate('TryOn');
@@ -116,21 +117,29 @@ export function CatalogScreen({ navigation }: any) {
       {
         text: t('deleteBtn'),
         style: 'destructive',
-        onPress: () => {
-          deleteProduct(productId);
-          Alert.alert(t('success'), t('deleteSuccessMsg'));
+        onPress: async () => {
+          try {
+            await deleteProduct(productId);
+            Alert.alert(t('success'), t('deleteSuccessMsg'));
+          } catch (err: any) {
+            Alert.alert(t('error'), err?.message || 'Falha ao excluir peça.');
+          }
         },
       },
     ]);
   }
 
-  function handleSaveProduct(productData: Partial<Product>) {
-    if (productData.id) {
-      editProduct(productData.id, productData);
-    } else {
-      addProduct(productData);
+  async function handleSaveProduct(productData: Partial<Product>) {
+    try {
+      if (productData.id) {
+        await editProduct(productData.id, productData);
+      } else {
+        await addProduct(productData);
+      }
+      Alert.alert(t('success'), t('productSavedSuccess'));
+    } catch (err: any) {
+      Alert.alert(t('error'), err?.message || 'Falha ao salvar produto.');
     }
-    Alert.alert(t('success'), t('productSavedSuccess'));
   }
 
   return (
@@ -200,11 +209,21 @@ export function CatalogScreen({ navigation }: any) {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
-            <EmptyState
-              icon={Tag}
-              title={t('noSearchResultsTitle')}
-              description={t('noSearchResultsDesc')}
-            />
+            products.length === 0 ? (
+              <EmptyState
+                icon={Tag}
+                title="Seu catálogo ainda está vazio."
+                description="Cadastre sua primeira peça de roupa no Admin para habilitar o provador virtual."
+                actionLabel={isStoreAdmin ? "Adicionar primeira peça" : undefined}
+                onAction={isStoreAdmin ? handleAddNew : undefined}
+              />
+            ) : (
+              <EmptyState
+                icon={Tag}
+                title={t('noSearchResultsTitle')}
+                description={t('noSearchResultsDesc')}
+              />
+            )
           }
           renderItem={({ item }) => {
             const photoUrl =

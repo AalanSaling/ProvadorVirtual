@@ -16,6 +16,8 @@ import { X, Sparkles, Image as ImageIcon, Check, Trash2, Eye } from 'lucide-reac
 import { colors, spacing, borderRadius, shadows } from '../theme';
 import { useI18n } from '../i18n';
 import { Product, GarmentCategory, CurrencyCode } from '../types';
+import { authenticatedFetch } from '../lib/authenticatedFetch';
+import { useCatalog } from '../context/CatalogContext';
 
 interface AdminProductModalProps {
   visible: boolean;
@@ -35,6 +37,7 @@ export function AdminProductModal({
   onDelete,
 }: AdminProductModalProps) {
   const { t } = useI18n();
+  const { currentStoreId } = useCatalog();
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -106,13 +109,15 @@ export function AdminProductModal({
       return;
     }
 
+    const targetStoreId = product.storeId || currentStoreId;
+
     setIsPreparingGarment(true);
     try {
-      const res = await fetch(`/api/products/${product.id}/prepare-garment`, {
+      const res = await authenticatedFetch(`/api/products/${product.id}/prepare-garment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          storeId: product.storeId || 'demo-store-001',
+          storeId: targetStoreId,
         }),
       });
 

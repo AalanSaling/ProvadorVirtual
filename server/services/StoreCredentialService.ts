@@ -29,7 +29,7 @@ export class StoreCredentialService {
   }
 
   private async initDefaultEnvFallback() {
-    const storesToBootstrap = ['store-atelier-01', 'demo-store-001'];
+    const storesToBootstrap = ['store-atelier-01'];
 
     const pcKey = process.env.PERFECTCORP_API_KEY || process.env.PERFECT_CORP_API_KEY;
     if (pcKey && pcKey.trim() && pcKey !== 'demo-perfectcorp-key') {

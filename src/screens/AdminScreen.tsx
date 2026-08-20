@@ -51,6 +51,7 @@ export function AdminScreen() {
     products,
     userRole,
     setUserRole,
+    currentStoreId,
     addProduct,
     editProduct,
     deleteProduct,
@@ -60,8 +61,6 @@ export function AdminScreen() {
   const [selectedProductForEdit, setSelectedProductForEdit] = useState<Product | null>(null);
   const [productModalVisible, setProductModalVisible] = useState(false);
   const [catalogSearch, setCatalogSearch] = useState('');
-
-  const currentStoreId = products[0]?.storeId || 'store-atelier-01';
 
   // Store settings state
   const [storeName, setStoreName] = useState('ATELIER MAISON');
@@ -288,7 +287,7 @@ export function AdminScreen() {
     setDiagnosticResult(null);
 
     try {
-      const response = await fetch('/api/try-on/diagnostic/input-check', {
+      const response = await authenticatedFetch('/api/try-on/diagnostic/input-check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -331,21 +330,29 @@ export function AdminScreen() {
       {
         text: t('deleteBtn'),
         style: 'destructive',
-        onPress: () => {
-          deleteProduct(productId);
-          Alert.alert(t('success'), t('deleteSuccessMsg'));
+        onPress: async () => {
+          try {
+            await deleteProduct(productId);
+            Alert.alert(t('success'), t('deleteSuccessMsg'));
+          } catch (err: any) {
+            Alert.alert(t('error'), err?.message || 'Falha ao excluir peça.');
+          }
         },
       },
     ]);
   }
 
-  function handleSaveProduct(productData: Partial<Product>) {
-    if (productData.id) {
-      editProduct(productData.id, productData);
-    } else {
-      addProduct(productData);
+  async function handleSaveProduct(productData: Partial<Product>) {
+    try {
+      if (productData.id) {
+        await editProduct(productData.id, productData);
+      } else {
+        await addProduct(productData);
+      }
+      Alert.alert(t('success'), t('productSavedSuccess'));
+    } catch (err: any) {
+      Alert.alert(t('error'), err?.message || 'Falha ao salvar produto.');
     }
-    Alert.alert(t('success'), t('productSavedSuccess'));
   }
 
   const enabledEnginesList = [

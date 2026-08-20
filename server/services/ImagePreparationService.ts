@@ -457,6 +457,28 @@ Return STRICT JSON without markdown code fences:
         logger.warn('[ImagePreparation] AI image generation step failed or was skipped, creating structured reference', {
           error: genErr.message,
         });
+        try {
+          // If Gemini hits 429 quota or API is unavailable, fetch catalog image and save as isolated prep_garment reference
+          const res = await fetch(input.catalogImageUrl);
+          if (res.ok) {
+            const buf = Buffer.from(await res.arrayBuffer());
+            const fileName = `prep_garment_${input.productId || Date.now()}_${Date.now()}.png`;
+            preparedImageUrl = await this.storageService.saveResultImage(buf, fileName);
+          }
+        } catch (fetchErr: any) {
+          logger.warn('[ImagePreparation] Could not fetch catalog image for fallback reference:', fetchErr.message);
+        }
+      }
+    } else {
+      try {
+        const res = await fetch(input.catalogImageUrl);
+        if (res.ok) {
+          const buf = Buffer.from(await res.arrayBuffer());
+          const fileName = `prep_garment_${input.productId || Date.now()}_${Date.now()}.png`;
+          preparedImageUrl = await this.storageService.saveResultImage(buf, fileName);
+        }
+      } catch (fetchErr: any) {
+        logger.warn('[ImagePreparation] Could not fetch catalog image for reference:', fetchErr.message);
       }
     }
 
