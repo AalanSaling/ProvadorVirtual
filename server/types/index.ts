@@ -174,7 +174,7 @@ export interface PersonQualityCheckResult {
   errorCode?: string | null;
 }
 
-export type GarmentPreparationStatus = 'pending' | 'processing' | 'ready' | 'failed';
+export type GarmentPreparationStatus = 'pending' | 'processing' | 'ready' | 'failed' | 'not_configured';
 
 export interface GarmentPreparationMetadata {
   status: GarmentPreparationStatus;

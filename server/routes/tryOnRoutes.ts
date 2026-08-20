@@ -62,6 +62,13 @@ const handleGenerateTryOn = async (req: AuthenticatedRequest, res: Response): Pr
         });
         return;
       }
+      if (errCode === 'GARMENT_PREPARATION_NOT_CONFIGURED') {
+        res.status(400).json({
+          error: 'GARMENT_PREPARATION_NOT_CONFIGURED',
+          message: lookupErr.message || 'A preparação automática da peça ainda não está configurada.',
+        });
+        return;
+      }
       if (errCode === 'GARMENT_PREPARATION_FAILED') {
         res.status(422).json({
           error: 'GARMENT_PREPARATION_FAILED',

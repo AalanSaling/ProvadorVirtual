@@ -41,8 +41,10 @@ export class ImagePreparationService {
   }
 
   private getApiKey(explicitKey?: string): string | null {
+    if (explicitKey !== undefined) {
+      return explicitKey && explicitKey.trim().length > 0 ? explicitKey.trim() : null;
+    }
     return (
-      explicitKey ||
       process.env.GOOGLE_API_KEY ||
       process.env.GEMINI_API_KEY ||
       null
@@ -418,8 +420,24 @@ Return STRICT JSON without markdown code fences:
 
     let preparedImageUrl: string | null = null;
     let status: GarmentPreparationStatus = 'ready';
+    let qualityGate: GarmentQualityGateResult;
 
-    if (apiKey) {
+    if (!apiKey) {
+      status = 'not_configured';
+      qualityGate = {
+        passed: false,
+        hasSingleGarment: false,
+        modelRemoved: false,
+        cleanBackground: false,
+        minResolutionPassed: false,
+        decodableFormat: false,
+        colorPreserved: false,
+        detailsPreserved: false,
+        errorCode: 'GARMENT_PREPARATION_NOT_CONFIGURED',
+        errorMessage: 'A preparação automática da peça ainda não está configurada.',
+      };
+      logger.warn('[ImagePreparation] Google API Key not configured for garment preparation pipeline.');
+    } else {
       try {
         const imagePart = await this.prepareImagePart(input.catalogImageUrl, 'Catalog Garment Photo');
         const ai = new GoogleGenAI({
@@ -454,63 +472,40 @@ Return STRICT JSON without markdown code fences:
           }
         }
       } catch (genErr: any) {
-        logger.warn('[ImagePreparation] AI image generation step failed or was skipped, creating structured reference', {
+        logger.warn('[ImagePreparation] AI image generation step failed or was skipped', {
           error: genErr.message,
         });
-        try {
-          // If Gemini hits 429 quota or API is unavailable, fetch catalog image and save as isolated prep_garment reference
-          const res = await fetch(input.catalogImageUrl);
-          if (res.ok) {
-            const buf = Buffer.from(await res.arrayBuffer());
-            const fileName = `prep_garment_${input.productId || Date.now()}_${Date.now()}.png`;
-            preparedImageUrl = await this.storageService.saveResultImage(buf, fileName);
-          }
-        } catch (fetchErr: any) {
-          logger.warn('[ImagePreparation] Could not fetch catalog image for fallback reference:', fetchErr.message);
-        }
-      }
-    } else {
-      try {
-        const res = await fetch(input.catalogImageUrl);
-        if (res.ok) {
-          const buf = Buffer.from(await res.arrayBuffer());
-          const fileName = `prep_garment_${input.productId || Date.now()}_${Date.now()}.png`;
-          preparedImageUrl = await this.storageService.saveResultImage(buf, fileName);
-        }
-      } catch (fetchErr: any) {
-        logger.warn('[ImagePreparation] Could not fetch catalog image for reference:', fetchErr.message);
-      }
-    }
-
-    // Step 3: Garment Quality Gate - STRICT: No fallback to catalogImageUrl
-    let qualityGate: GarmentQualityGateResult;
-
-    if (!preparedImageUrl) {
-      status = 'failed';
-      qualityGate = {
-        passed: false,
-        hasSingleGarment: false,
-        modelRemoved: false,
-        cleanBackground: false,
-        minResolutionPassed: false,
-        decodableFormat: false,
-        colorPreserved: false,
-        detailsPreserved: false,
-        errorCode: 'GARMENT_PREPARATION_FAILED',
-        errorMessage: 'A preparação por IA não produziu uma imagem isolada válida da peça.',
-      };
-      logger.error('[ImagePreparation] Garment preparation failed: no prepared image produced.', {
-        productId: input.productId,
-      });
-    } else {
-      qualityGate = await this.validateGarmentQuality(input.catalogImageUrl, preparedImageUrl, analysis);
-      if (!qualityGate.passed) {
-        status = 'failed';
         preparedImageUrl = null;
-        logger.error('[ImagePreparation] Garment preparation failed quality gate', {
-          errorCode: qualityGate.errorCode,
-          errorMessage: qualityGate.errorMessage,
+      }
+
+      // Step 3: Garment Quality Gate - STRICT: No fallback to catalogImageUrl
+      if (!preparedImageUrl) {
+        status = 'failed';
+        qualityGate = {
+          passed: false,
+          hasSingleGarment: false,
+          modelRemoved: false,
+          cleanBackground: false,
+          minResolutionPassed: false,
+          decodableFormat: false,
+          colorPreserved: false,
+          detailsPreserved: false,
+          errorCode: 'GARMENT_PREPARATION_FAILED',
+          errorMessage: 'Não conseguimos preparar esta peça. Tente usar outra foto com a roupa mais visível.',
+        };
+        logger.error('[ImagePreparation] Garment preparation failed: no prepared image produced.', {
+          productId: input.productId,
         });
+      } else {
+        qualityGate = await this.validateGarmentQuality(input.catalogImageUrl, preparedImageUrl, analysis);
+        if (!qualityGate.passed) {
+          status = 'failed';
+          preparedImageUrl = null;
+          logger.error('[ImagePreparation] Garment preparation failed quality gate', {
+            errorCode: qualityGate.errorCode,
+            errorMessage: qualityGate.errorMessage,
+          });
+        }
       }
     }
 
@@ -536,7 +531,9 @@ Return STRICT JSON without markdown code fences:
 
   /**
    * 4. PERSON QUALITY CHECK & ANALYSIS
-   * Validates that person image is sharp, single person, good lighting, proper framing without beautify/distortion.
+   * FASE 7.3: Permissive validation.
+   * Only blocks if file is unreadable, corrupted, or not an image.
+   * Imperfect resolution, framing, lighting or pose are converted to advisory tips without blocking generation.
    */
   public async analyzeAndValidatePerson(
     personImageUrl: string,
@@ -544,7 +541,7 @@ Return STRICT JSON without markdown code fences:
   ): Promise<PersonQualityCheckResult> {
     try {
       const meta = await getImageMetadata(personImageUrl);
-      if (!meta) {
+      if (!meta || meta.width <= 0 || meta.height <= 0) {
         return {
           valid: false,
           isSharp: false,
@@ -553,37 +550,44 @@ Return STRICT JSON without markdown code fences:
           faceVisible: false,
           lightingAdequate: false,
           poseAdequate: false,
-          humanMessage: 'Escolha uma foto de corpo inteiro, bem iluminada e nítida.',
+          humanMessage: 'Não foi possível decodificar a foto da pessoa. Tente selecionar outra imagem.',
           errorCode: 'INVALID_PERSON_IMAGE_FORMAT',
         };
       }
 
-      if (meta.width < 512 || meta.height < 384) {
+      // Check if image format is decodable
+      if (meta.format !== 'jpeg' && meta.format !== 'png') {
         return {
           valid: false,
           isSharp: false,
-          isSinglePerson: true,
-          framing: 'too_small' as any,
-          faceVisible: true,
+          isSinglePerson: false,
+          framing: 'unknown',
+          faceVisible: false,
           lightingAdequate: false,
           poseAdequate: false,
-          humanMessage: 'Escolha uma foto de corpo inteiro, bem iluminada e nítida.',
-          errorCode: 'PERSON_RESOLUTION_TOO_LOW',
+          humanMessage: 'Formato de imagem não suportado. Utilize arquivos JPEG ou PNG.',
+          errorCode: 'INVALID_PERSON_IMAGE_FORMAT',
         };
+      }
+
+      // If resolution is lower than ideal or lighting is moderate, we still allow generation (valid: true) with advisory message
+      const isModerateResolution = meta.width < 512 || meta.height < 384;
+      let humanMessage = 'Foto adicionada. Pronta para o provador.';
+      if (isModerateResolution) {
+        humanMessage = 'Foto adicionada. Dica: fotos com mais luz e maior enquadramento costumam gerar resultados melhores.';
       }
 
       const apiKey = this.getApiKey(apiKeyOverride);
       if (!apiKey) {
-        // Fast local verification passes when dimensions and format are sound
         return {
           valid: true,
-          isSharp: true,
+          isSharp: !isModerateResolution,
           isSinglePerson: true,
-          framing: meta.height > meta.width * 1.2 ? 'full_body' : 'upper_body',
+          framing: meta.height > meta.width * 1.1 ? 'full_body' : 'upper_body',
           faceVisible: true,
           lightingAdequate: true,
           poseAdequate: true,
-          humanMessage: 'Foto aprovada para o provador virtual.',
+          humanMessage,
           errorCode: null,
         };
       }
@@ -597,17 +601,16 @@ Return STRICT JSON without markdown code fences:
 
         const prompt = `
 Analyze the provided user photo for a Virtual Try-On application.
-Verify if the photo is suitable for Virtual Try-On.
+Check framing, lighting, sharpness and pose.
 Return a STRICT JSON object without markdown fences:
 {
   "isSharp": boolean,
-  "isSinglePerson": boolean, // Must be true (false if group/multiple people)
+  "isSinglePerson": boolean,
   "framing": "full_body" | "upper_body" | "too_close" | "too_far" | "unknown",
   "faceVisible": boolean,
   "lightingAdequate": boolean,
-  "poseAdequate": boolean, // Natural standing/sitting pose suitable for clothing
-  "valid": boolean,
-  "humanMessage": string // Friendly Portuguese message advising user if photo has issues
+  "poseAdequate": boolean,
+  "adviceTip": string // Optional short friendly Portuguese tip if framing/light could improve
 }
 `.trim();
 
@@ -625,31 +628,33 @@ Return a STRICT JSON object without markdown fences:
         const cleanJson = text.replace(/```json/gi, '').replace(/```/g, '').trim();
         const parsed = JSON.parse(cleanJson);
 
-        const isValid = Boolean(parsed.valid && parsed.isSinglePerson && parsed.isSharp && parsed.lightingAdequate);
+        const tip = parsed.adviceTip || (!parsed.isSharp || !parsed.lightingAdequate
+          ? 'Dica: fotos com mais luz e maior enquadramento costumam gerar resultados melhores.'
+          : 'Foto adicionada. Pronta para o provador.');
 
         return {
-          valid: isValid,
-          isSharp: Boolean(parsed.isSharp),
-          isSinglePerson: Boolean(parsed.isSinglePerson),
+          valid: true, // Non-blocking: always allow real attempt if decoded
+          isSharp: parsed.isSharp !== undefined ? Boolean(parsed.isSharp) : true,
+          isSinglePerson: parsed.isSinglePerson !== undefined ? Boolean(parsed.isSinglePerson) : true,
           framing: parsed.framing || 'full_body',
-          faceVisible: Boolean(parsed.faceVisible),
-          lightingAdequate: Boolean(parsed.lightingAdequate),
-          poseAdequate: Boolean(parsed.poseAdequate),
-          humanMessage: isValid ? (parsed.humanMessage || 'Foto aprovada para o provador virtual.') : 'Escolha uma foto de corpo inteiro, bem iluminada e nítida.',
-          errorCode: isValid ? null : 'PERSON_QUALITY_CHECK_FAILED',
+          faceVisible: parsed.faceVisible !== undefined ? Boolean(parsed.faceVisible) : true,
+          lightingAdequate: parsed.lightingAdequate !== undefined ? Boolean(parsed.lightingAdequate) : true,
+          poseAdequate: parsed.poseAdequate !== undefined ? Boolean(parsed.poseAdequate) : true,
+          humanMessage: tip,
+          errorCode: null,
         };
       } catch (aiErr: any) {
-        logger.warn('[ImagePreparation] AI person quality check failed', { error: aiErr.message });
+        logger.warn('[ImagePreparation] AI person analysis observation notice', { error: aiErr.message });
         return {
-          valid: false,
-          isSharp: false,
-          isSinglePerson: false,
-          framing: 'unknown',
-          faceVisible: false,
-          lightingAdequate: false,
-          poseAdequate: false,
-          humanMessage: 'Escolha uma foto de corpo inteiro, bem iluminada e nítida.',
-          errorCode: 'PERSON_QUALITY_CHECK_FAILED',
+          valid: true, // Non-blocking: proceed with local validation
+          isSharp: true,
+          isSinglePerson: true,
+          framing: meta.height > meta.width * 1.1 ? 'full_body' : 'upper_body',
+          faceVisible: true,
+          lightingAdequate: true,
+          poseAdequate: true,
+          humanMessage: 'Foto adicionada. Dica: fotos com mais luz e maior enquadramento costumam gerar resultados melhores.',
+          errorCode: null,
         };
       }
     } catch (err: any) {
@@ -661,7 +666,7 @@ Return a STRICT JSON object without markdown fences:
         faceVisible: false,
         lightingAdequate: false,
         poseAdequate: false,
-        humanMessage: 'Escolha uma foto de corpo inteiro, bem iluminada e nítida.',
+        humanMessage: 'Não foi possível decodificar a foto. Tente selecionar outra imagem.',
         errorCode: 'PERSON_QUALITY_CHECK_ERROR',
       };
     }

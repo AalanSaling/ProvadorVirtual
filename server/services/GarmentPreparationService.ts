@@ -82,6 +82,13 @@ export class GarmentPreparationService {
     logger.info(`[GarmentPreparation] No try_on_reference found for product '${productId}'. Triggering automatic on-demand garment preparation pipeline.`);
     const prepMeta = await this.processProductGarmentPreparation(productId, storeId);
 
+    if (prepMeta.status === 'not_configured') {
+      const userMessage = 'A preparação automática da peça ainda não está configurada.';
+      const err = new Error(userMessage);
+      (err as unknown as Record<string, string>).code = 'GARMENT_PREPARATION_NOT_CONFIGURED';
+      throw err;
+    }
+
     if (prepMeta.status !== 'ready' || !prepMeta.preparedImageUrl) {
       const userMessage = 'Não conseguimos preparar esta peça. Tente usar outra foto com a roupa mais visível.';
       const err = new Error(userMessage);

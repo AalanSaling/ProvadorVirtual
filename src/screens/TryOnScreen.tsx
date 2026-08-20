@@ -164,7 +164,7 @@ export function TryOnScreen({ route }: any) {
       setPersonImage(uri);
     }
 
-    // Run person quality check
+    // Run person quality check (advisory and non-blocking)
     setValidatingPerson(true);
     try {
       const res = await fetch('/api/try-on/person/validate', {
@@ -177,14 +177,14 @@ export function TryOnScreen({ route }: any) {
         setPersonQuality(qualityData);
       } else {
         setPersonQuality({
-          valid: false,
-          humanMessage: 'Não foi possível verificar sua foto. Tente novamente com uma foto nítida e bem iluminada.',
+          valid: true,
+          humanMessage: 'Foto adicionada. Dica: fotos com mais luz e maior enquadramento costumam gerar resultados melhores.',
         });
       }
     } catch {
       setPersonQuality({
-        valid: false,
-        humanMessage: 'Não foi possível verificar sua foto. Tente novamente.',
+        valid: true,
+        humanMessage: 'Foto adicionada. Pronta para provar.',
       });
     } finally {
       setValidatingPerson(false);
@@ -194,12 +194,12 @@ export function TryOnScreen({ route }: any) {
   // Execute Virtual Try-On
   async function handleExecuteTryOn() {
     if (!personImage) {
-      Alert.alert(t('photoMissingAlertTitle'), t('photoMissingAlertMsg'));
+      Alert.alert(t('photoMissingAlertTitle') || 'Foto necessária', t('photoMissingAlertMsg') || 'Adicione uma foto sua para provar o produto.');
       return;
     }
 
-    if (personQuality && !personQuality.valid) {
-      Alert.alert(t('error') || 'Foto inválida', personQuality.humanMessage || 'Não foi possível verificar sua foto. Tente novamente.');
+    if (personQuality && personQuality.valid === false) {
+      Alert.alert(t('error') || 'Foto inválida', personQuality.humanMessage || 'Não foi possível decodificar sua foto. Tente enviar uma imagem válida.');
       return;
     }
 
