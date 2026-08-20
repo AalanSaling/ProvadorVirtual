@@ -541,7 +541,7 @@ Return STRICT JSON without markdown code fences:
   ): Promise<PersonQualityCheckResult> {
     try {
       const meta = await getImageMetadata(personImageUrl);
-      if (!meta || meta.width <= 0 || meta.height <= 0) {
+      if (!meta || meta.sizeBytes === 0 || meta.format === 'unknown') {
         return {
           valid: false,
           isSharp: false,
@@ -555,23 +555,8 @@ Return STRICT JSON without markdown code fences:
         };
       }
 
-      // Check if image format is decodable
-      if (meta.format !== 'jpeg' && meta.format !== 'png') {
-        return {
-          valid: false,
-          isSharp: false,
-          isSinglePerson: false,
-          framing: 'unknown',
-          faceVisible: false,
-          lightingAdequate: false,
-          poseAdequate: false,
-          humanMessage: 'Formato de imagem não suportado. Utilize arquivos JPEG ou PNG.',
-          errorCode: 'INVALID_PERSON_IMAGE_FORMAT',
-        };
-      }
-
       // If resolution is lower than ideal or lighting is moderate, we still allow generation (valid: true) with advisory message
-      const isModerateResolution = meta.width < 512 || meta.height < 384;
+      const isModerateResolution = (meta.width > 0 && meta.width < 512) || (meta.height > 0 && meta.height < 384);
       let humanMessage = 'Foto adicionada. Pronta para o provador.';
       if (isModerateResolution) {
         humanMessage = 'Foto adicionada. Dica: fotos com mais luz e maior enquadramento costumam gerar resultados melhores.';

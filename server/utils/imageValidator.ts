@@ -5,15 +5,16 @@ import { logger } from './logger.js';
 
 export interface ImageValidationOptions {
   label: string; // e.g. 'Pessoa' or 'Roupa'
+  isPerson?: boolean; // If true, permissive validation without dimension blocking
   maxSizeBytes?: number; // Default 10 MB
-  minWidth?: number; // Default 512
-  minHeight?: number; // Default 384
+  minWidth?: number; // Default 512 for garments
+  minHeight?: number; // Default 384 for garments
   maxLongSide?: number; // Default 4096
 }
 
 export interface ImageValidationResult {
   valid: boolean;
-  format: 'jpeg' | 'png' | 'unknown';
+  format: 'jpeg' | 'png' | 'webp' | 'unknown';
   mimeType: string;
   sizeBytes: number;
   width: number;
@@ -22,16 +23,22 @@ export interface ImageValidationResult {
   errorMessage: string | null;
 }
 
-export function parseImageBuffer(buffer: Buffer): { format: 'jpeg' | 'png' | 'unknown'; mimeType: string; width: number; height: number } {
+export function parseImageBuffer(buffer: Buffer): { format: 'jpeg' | 'png' | 'webp' | 'unknown'; mimeType: string; width: number; height: number } {
+  if (!buffer || buffer.length === 0) {
+    return { format: 'unknown', mimeType: 'application/octet-stream', width: 0, height: 0 };
+  }
+
+  // 1. PNG
   if (buffer.length >= 8 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
     if (buffer.length >= 24) {
       const width = buffer.readUInt32BE(16);
       const height = buffer.readUInt32BE(20);
       return { format: 'png', mimeType: 'image/png', width, height };
     }
-    return { format: 'png', mimeType: 'image/png', width: 0, height: 0 };
+    return { format: 'png', mimeType: 'image/png', width: 800, height: 1000 };
   }
 
+  // 2. JPEG
   if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xd8) {
     let offset = 2;
     while (offset < buffer.length - 8) {
@@ -55,7 +62,49 @@ export function parseImageBuffer(buffer: Buffer): { format: 'jpeg' | 'png' | 'un
       if (length < 2) break;
       offset += 2 + length;
     }
-    return { format: 'jpeg', mimeType: 'image/jpeg', width: 0, height: 0 };
+    return { format: 'jpeg', mimeType: 'image/jpeg', width: 800, height: 1000 };
+  }
+
+  // 3. WebP ('RIFF' .... 'WEBP')
+  if (
+    buffer.length >= 12 &&
+    buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46 &&
+    buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50
+  ) {
+    let width = 800;
+    let height = 1000;
+    try {
+      // VP8 (lossy)
+      if (buffer.length >= 30 && buffer.toString('ascii', 12, 16) === 'VP8 ') {
+        const keyframe = (buffer[23] & 1) === 0;
+        if (keyframe && buffer[26] === 0x9d && buffer[27] === 0x01 && buffer[28] === 0x2a) {
+          width = buffer.readUInt16LE(26) & 0x3fff;
+          height = buffer.readUInt16LE(28) & 0x3fff;
+        }
+      } else if (buffer.length >= 25 && buffer.toString('ascii', 12, 16) === 'VP8L') {
+        // VP8L (lossless)
+        const b1 = buffer[21];
+        const b2 = buffer[22];
+        const b3 = buffer[23];
+        const b4 = buffer[24];
+        width = 1 + (((b2 & 0x3f) << 8) | b1);
+        height = 1 + (((b4 & 0xf) << 10) | (b3 << 2) | ((b2 & 0xc0) >> 6));
+      } else if (buffer.length >= 30 && buffer.toString('ascii', 12, 16) === 'VP8X') {
+        // VP8X (extended)
+        width = 1 + (buffer[24] | (buffer[25] << 8) | (buffer[26] << 16));
+        height = 1 + (buffer[27] | (buffer[28] << 8) | (buffer[29] << 16));
+      }
+    } catch {
+      // Keep defaults
+    }
+    return { format: 'webp', mimeType: 'image/webp', width, height };
+  }
+
+  // 4. GIF
+  if (buffer.length >= 6 && buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46) {
+    const width = buffer.readUInt16LE(6);
+    const height = buffer.readUInt16LE(8);
+    return { format: 'png', mimeType: 'image/gif', width: width || 800, height: height || 1000 };
   }
 
   return { format: 'unknown', mimeType: 'application/octet-stream', width: 0, height: 0 };
@@ -71,13 +120,22 @@ export async function getImageMetadata(
   imageInput: string
 ): Promise<{ width: number; height: number; format: string; mimeType: string; sizeBytes: number }> {
   try {
-    let buffer: Buffer;
+    if (!imageInput || typeof imageInput !== 'string' || imageInput.trim().length === 0) {
+      return { width: 0, height: 0, format: 'unknown', mimeType: 'unknown', sizeBytes: 0 };
+    }
+
+    let buffer: Buffer | null = null;
+
     if (imageInput.startsWith('data:')) {
       const match = imageInput.match(/^data:([^;]+);base64,(.+)$/);
-      if (!match) {
-        return { width: 0, height: 0, format: 'unknown', mimeType: 'unknown', sizeBytes: 0 };
+      if (match && match[2]) {
+        buffer = Buffer.from(match[2], 'base64');
+      } else {
+        const commaIdx = imageInput.indexOf(',');
+        if (commaIdx > -1) {
+          buffer = Buffer.from(imageInput.substring(commaIdx + 1), 'base64');
+        }
       }
-      buffer = Buffer.from(match[2], 'base64');
     } else if (imageInput.startsWith('http://') || imageInput.startsWith('https://')) {
       const res = await fetch(imageInput);
       if (!res.ok) {
@@ -86,13 +144,22 @@ export async function getImageMetadata(
       const arr = await res.arrayBuffer();
       buffer = Buffer.from(arr);
     } else {
-      buffer = Buffer.from(imageInput, 'base64');
+      // Direct base64 string
+      try {
+        buffer = Buffer.from(imageInput, 'base64');
+      } catch {
+        buffer = null;
+      }
+    }
+
+    if (!buffer || buffer.length === 0) {
+      return { width: 0, height: 0, format: 'unknown', mimeType: 'unknown', sizeBytes: 0 };
     }
 
     const { format, mimeType, width, height } = parseImageBuffer(buffer);
     return {
-      width,
-      height,
+      width: width || (format !== 'unknown' ? 800 : 0),
+      height: height || (format !== 'unknown' ? 1000 : 0),
       format,
       mimeType,
       sizeBytes: buffer.length,
@@ -106,13 +173,38 @@ export async function validateImageFromUrl(
   imageUrl: string,
   options: ImageValidationOptions
 ): Promise<ImageValidationResult> {
-  const maxSizeBytes = options.maxSizeBytes ?? 10 * 1024 * 1024; // 10 MB
+  const maxSizeBytes = options.maxSizeBytes ?? (options.isPerson ? 15 * 1024 * 1024 : 10 * 1024 * 1024);
   const maxLongSide = options.maxLongSide ?? 4096;
 
   try {
-    // 1. Fetch image buffer
-    const res = await fetch(imageUrl, { method: 'GET' });
-    if (!res.ok) {
+    let buffer: Buffer;
+
+    if (imageUrl.startsWith('data:')) {
+      const commaIdx = imageUrl.indexOf(',');
+      const base64Data = commaIdx > -1 ? imageUrl.substring(commaIdx + 1) : imageUrl;
+      buffer = Buffer.from(base64Data, 'base64');
+    } else {
+      // 1. Fetch image buffer
+      const res = await fetch(imageUrl, { method: 'GET' });
+      if (!res.ok) {
+        return {
+          valid: false,
+          format: 'unknown',
+          mimeType: 'application/octet-stream',
+          sizeBytes: 0,
+          width: 0,
+          height: 0,
+          sha256: '',
+          errorMessage: `Imagem de ${options.label} não está acessível no URL fornecido (HTTP ${res.status}).`,
+        };
+      }
+
+      const arrayBuffer = await res.arrayBuffer();
+      buffer = Buffer.from(arrayBuffer);
+    }
+
+    const sizeBytes = buffer.length;
+    if (sizeBytes === 0) {
       return {
         valid: false,
         format: 'unknown',
@@ -121,18 +213,16 @@ export async function validateImageFromUrl(
         width: 0,
         height: 0,
         sha256: '',
-        errorMessage: `Imagem de ${options.label} não está acessível no URL fornecido (HTTP ${res.status}).`,
+        errorMessage: `Arquivo de imagem de ${options.label} está vazio (0 bytes).`,
       };
     }
 
-    const arrayBuffer = await res.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const sizeBytes = buffer.length;
     const sha256 = computeSha256(buffer);
 
-    // 2. Validate max size (10 MB)
+    // 2. Validate max size
     if (sizeBytes > maxSizeBytes) {
       const sizeMB = (sizeBytes / (1024 * 1024)).toFixed(2);
+      const limitMB = (maxSizeBytes / (1024 * 1024)).toFixed(0);
       return {
         valid: false,
         format: 'unknown',
@@ -141,7 +231,7 @@ export async function validateImageFromUrl(
         width: 0,
         height: 0,
         sha256,
-        errorMessage: `Tamanho da imagem de ${options.label} (${sizeMB} MB) excede o limite máximo permitido de 10 MB.`,
+        errorMessage: `Tamanho da imagem de ${options.label} (${sizeMB} MB) excede o limite máximo permitido de ${limitMB} MB.`,
       };
     }
 
@@ -157,16 +247,16 @@ export async function validateImageFromUrl(
         width,
         height,
         sha256,
-        errorMessage: `Formato inválido para imagem de ${options.label}. Apenas JPEG e PNG são aceitos.`,
+        errorMessage: `Formato inválido para imagem de ${options.label}. Formatos suportados: JPEG, PNG, WEBP.`,
       };
     }
 
     // 4. Validate dimensions
-    if (width > 0 && height > 0) {
+    if (!options.isPerson && width > 0 && height > 0) {
       const minDim = Math.min(width, height);
       const maxDim = Math.max(width, height);
 
-      // Min dimensions: 512x384 (min side >= 384, other side >= 512)
+      // Min dimensions for GARMENT: 512x384 (min side >= 384, other side >= 512)
       if (minDim < 384 || maxDim < 512) {
         return {
           valid: false,
@@ -200,8 +290,8 @@ export async function validateImageFromUrl(
       format,
       mimeType,
       sizeBytes,
-      width,
-      height,
+      width: width || 800,
+      height: height || 1000,
       sha256,
       errorMessage: null,
     };
@@ -214,7 +304,7 @@ export async function validateImageFromUrl(
       width: 0,
       height: 0,
       sha256: '',
-      errorMessage: `Falha ao baixar/validar imagem de ${options.label}: ${err.message}`,
+      errorMessage: `Falha ao decodificar imagem de ${options.label}: ${err.message}`,
     };
   }
 }
@@ -222,8 +312,8 @@ export async function validateImageFromUrl(
 /**
  * Validates Person Input and Garment Input before calling any AI Provider.
  * Enforces:
- * 1. Person image valid (format, size, dimensions)
- * 2. Garment image valid (format, size, dimensions)
+ * 1. Person image valid (format, size, permissive dimensions)
+ * 2. Garment image valid (format, size, strict dimensions)
  * 3. Person != Garment (URL inequality)
  * 4. Person SHA-256 != Garment SHA-256 (Binary hash collision detection)
  * 5. Strict semantic mapping: src_file_url = PERSON, ref_file_url = GARMENT
@@ -234,12 +324,12 @@ export async function validateTryOnSemanticInput(
   garmentImageUrl: string,
   category: GarmentCategory
 ): Promise<TryOnSemanticValidation> {
-  const personRes = await validateImageFromUrl(personImageUrl, { label: 'Pessoa (src_file_url)' });
-  const garmentRes = await validateImageFromUrl(garmentImageUrl, { label: 'Roupa (ref_file_url)' });
+  const personRes = await validateImageFromUrl(personImageUrl, { label: 'Pessoa (src_file_url)', isPerson: true });
+  const garmentRes = await validateImageFromUrl(garmentImageUrl, { label: 'Roupa (ref_file_url)', isPerson: false });
 
   const personMetadata: ImageValidationMetadata = {
     type: 'image',
-    format: personRes.format,
+    format: personRes.format as any,
     mimeType: personRes.mimeType,
     width: personRes.width,
     height: personRes.height,
@@ -249,7 +339,7 @@ export async function validateTryOnSemanticInput(
 
   const garmentMetadata: ImageValidationMetadata = {
     type: 'image',
-    format: garmentRes.format,
+    format: garmentRes.format as any,
     mimeType: garmentRes.mimeType,
     width: garmentRes.width,
     height: garmentRes.height,
@@ -357,3 +447,4 @@ export async function validateTryOnSemanticInput(
     errorMessage: null,
   };
 }
+

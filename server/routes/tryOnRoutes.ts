@@ -93,10 +93,22 @@ const handleGenerateTryOn = async (req: AuthenticatedRequest, res: Response): Pr
 
     const userId = req.user!.id; // Derived strictly from verified JWT
 
+    // 2.5 Convert base64 data URI to accessible temporary URL if needed
+    let processedPersonImage = personImage;
+    let cleanupTempPath = tempInputStoragePath;
+    if (personImage.startsWith('data:')) {
+      const match = personImage.match(/^data:([^;]+);base64,(.+)$/);
+      const b64 = match ? match[2] : (personImage.includes(',') ? personImage.split(',')[1] : personImage);
+      const buffer = Buffer.from(b64, 'base64');
+      const tempFilename = `person_input_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.jpg`;
+      processedPersonImage = await storageService.saveResultImage(buffer, tempFilename);
+      cleanupTempPath = tempFilename;
+    }
+
     // 3. Execute Virtual Try-On (personImage = pessoa, garmentImage = DB reference)
     const result = await tryOnService.executeMultiProviderTryOn(
       {
-        personImage,
+        personImage: processedPersonImage,
         garmentImage,
         garmentCategory: product.category,
         productId: product.id,
@@ -104,7 +116,7 @@ const handleGenerateTryOn = async (req: AuthenticatedRequest, res: Response): Pr
         userId,
       },
       selectedProviders,
-      tempInputStoragePath
+      cleanupTempPath
     );
 
     if (result.overallStatus === 'failed') {
