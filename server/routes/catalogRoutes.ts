@@ -74,6 +74,18 @@ catalogRouter.post('/', requireAuth, requireStoreAdmin, async (req: Authenticate
     }
 
     const newProduct = await catalogService.createProduct(productData);
+
+    // Asynchronously trigger automatic garment preparation in the background
+    const hasCatalogPhoto = newProduct.photos?.some(p => p.type === 'catalog' && p.storagePath);
+    if (hasCatalogPhoto && newProduct.id && newProduct.storeId) {
+      garmentPrepService.processProductGarmentPreparation(newProduct.id, newProduct.storeId).catch(err => {
+        logger.warn('[CatalogRoutes] Background garment preparation notice for new product:', {
+          productId: newProduct.id,
+          error: err?.message,
+        });
+      });
+    }
+
     res.status(201).json(newProduct);
   } catch (err) {
     logger.error('Error in POST /api/products', err);
@@ -88,6 +100,18 @@ catalogRouter.put('/:id', requireAuth, requireStoreAdmin, async (req: Authentica
     const productData: Partial<Product> = req.body;
 
     const updated = await catalogService.updateProduct(productId, productData);
+
+    // If photos updated, trigger background preparation
+    const hasCatalogPhoto = updated.photos?.some(p => p.type === 'catalog' && p.storagePath);
+    if (hasCatalogPhoto && updated.id && updated.storeId) {
+      garmentPrepService.processProductGarmentPreparation(updated.id, updated.storeId).catch(err => {
+        logger.warn('[CatalogRoutes] Background garment preparation notice for updated product:', {
+          productId: updated.id,
+          error: err?.message,
+        });
+      });
+    }
+
     res.json(updated);
   } catch (err) {
     logger.error('Error in PUT /api/products/:id', err);

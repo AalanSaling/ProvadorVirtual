@@ -48,25 +48,56 @@ export class GarmentPreparationService {
     }
 
     const tryOnRefPhoto = product.photos?.find(p => p.type === 'try_on_reference');
-    const catalogPhoto = product.photos?.find(p => p.type === 'catalog');
+    const catalogPhoto = product.photos?.find(p => p.type === 'catalog') || product.photos?.[0];
 
-    if (!tryOnRefPhoto || !tryOnRefPhoto.storagePath) {
-      const err = new Error(`PRODUCT_TRY_ON_REFERENCE_NOT_FOUND: Product '${productId}' does not have a dedicated 'try_on_reference' photo configured in database.`);
-      (err as unknown as Record<string, string>).code = 'PRODUCT_TRY_ON_REFERENCE_NOT_FOUND';
+    // If try_on_reference already exists, resolve and return it
+    if (tryOnRefPhoto && tryOnRefPhoto.storagePath) {
+      let referenceUrl = tryOnRefPhoto.storagePath;
+      if (!referenceUrl.startsWith('http://') && !referenceUrl.startsWith('https://')) {
+        referenceUrl = this.storageService.getPublicUrl(StorageService.BUCKET_PRODUCT_IMAGES, referenceUrl);
+      }
+
+      let catalogImageUrl: string | null = null;
+      if (catalogPhoto?.storagePath) {
+        catalogImageUrl = catalogPhoto.storagePath;
+        if (!catalogImageUrl.startsWith('http://') && !catalogImageUrl.startsWith('https://')) {
+          catalogImageUrl = this.storageService.getPublicUrl(StorageService.BUCKET_PRODUCT_IMAGES, catalogImageUrl);
+        }
+      }
+
+      return {
+        referenceUrl,
+        product,
+        catalogImageUrl,
+      };
+    }
+
+    // If try_on_reference does NOT exist, check if catalog image exists to trigger automatic preparation
+    if (!catalogPhoto || !catalogPhoto.storagePath) {
+      const err = new Error(`CATALOG_PHOTO_MISSING: O produto '${product.name || productId}' não possui foto cadastrada no catálogo.`);
+      (err as unknown as Record<string, string>).code = 'CATALOG_PHOTO_MISSING';
       throw err;
     }
 
-    let referenceUrl = tryOnRefPhoto.storagePath;
+    logger.info(`[GarmentPreparation] No try_on_reference found for product '${productId}'. Triggering automatic on-demand garment preparation pipeline.`);
+    const prepMeta = await this.processProductGarmentPreparation(productId, storeId);
+
+    if (prepMeta.status !== 'ready' || !prepMeta.preparedImageUrl) {
+      const userMessage = 'Não conseguimos preparar esta peça. Tente usar outra foto com a roupa mais visível.';
+      const err = new Error(userMessage);
+      (err as unknown as Record<string, string>).code = 'GARMENT_PREPARATION_FAILED';
+      (err as unknown as Record<string, string>).details = prepMeta.qualityGate?.errorMessage || userMessage;
+      throw err;
+    }
+
+    let referenceUrl = prepMeta.preparedImageUrl;
     if (!referenceUrl.startsWith('http://') && !referenceUrl.startsWith('https://')) {
       referenceUrl = this.storageService.getPublicUrl(StorageService.BUCKET_PRODUCT_IMAGES, referenceUrl);
     }
 
-    let catalogImageUrl: string | null = null;
-    if (catalogPhoto?.storagePath) {
-      catalogImageUrl = catalogPhoto.storagePath;
-      if (!catalogImageUrl.startsWith('http://') && !catalogImageUrl.startsWith('https://')) {
-        catalogImageUrl = this.storageService.getPublicUrl(StorageService.BUCKET_PRODUCT_IMAGES, catalogImageUrl);
-      }
+    let catalogImageUrl: string | null = catalogPhoto.storagePath;
+    if (!catalogImageUrl.startsWith('http://') && !catalogImageUrl.startsWith('https://')) {
+      catalogImageUrl = this.storageService.getPublicUrl(StorageService.BUCKET_PRODUCT_IMAGES, catalogImageUrl);
     }
 
     return {

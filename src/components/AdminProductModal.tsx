@@ -391,123 +391,112 @@ export function AdminProductModal({
               </TouchableOpacity>
             </View>
 
-            {/* SEPARATED IMAGES: 1. FOTO DO CATÁLOGO */}
+            {/* FOTO DA PEÇA (CATÁLOGO) */}
             <View style={styles.photoSectionCard}>
               <View style={styles.photoSectionHeader}>
-                <ImageIcon size={15} color={colors.accent} />
-                <Text style={styles.photoSectionTitle}>{t('catalogPhotoSectionTitle')}</Text>
+                <ImageIcon size={16} color={colors.accent} />
+                <Text style={styles.photoSectionTitle}>Foto da Peça (Catálogo)</Text>
               </View>
-              <Text style={styles.photoSectionHelp}>{t('catalogPhotoSectionDesc')}</Text>
+              <Text style={styles.photoSectionHelp}>
+                Cole a URL da foto da peça no catálogo. O provador virtual preparará a imagem automaticamente para você.
+              </Text>
 
               <TextInput
                 style={[styles.input, { marginTop: spacing.sm }]}
                 value={catalogPhotoUrl}
                 onChangeText={setCatalogPhotoUrl}
-                placeholder={t('photoUrlPlaceholder')}
+                placeholder="https://exemplo.com/fotos/vestido.jpg"
                 placeholderTextColor={colors.textTertiary}
               />
             </View>
 
-            {/* AI GARMENT ISOLATION ACTION */}
-            <View style={styles.aiActionCard}>
-              <View style={styles.aiActionHeader}>
-                <Sparkles size={16} color={colors.accentDark} />
-                <Text style={styles.aiActionTitle}>Pipeline de Preparação Visual IA (Fase 5)</Text>
-              </View>
-              <Text style={styles.aiActionDesc}>
-                Executa isolamento visual real com gemini-3.1-flash-image: remoção de modelo/manequim, extração de detalhes e validação de Quality Gate.
-              </Text>
-              <TouchableOpacity
-                style={[styles.aiActionBtn, isPreparingGarment && styles.aiActionBtnDisabled]}
-                onPress={handleTriggerAIGarmentPreparation}
-                disabled={isPreparingGarment}
-                activeOpacity={0.85}
-              >
-                {isPreparingGarment ? (
-                  <Text style={styles.aiActionBtnText}>Isolando Peça com IA...</Text>
-                ) : (
-                  <>
-                    <Sparkles size={15} color={colors.textInverse} />
-                    <Text style={styles.aiActionBtnText}>
-                      {referencePhotoUrl ? 'Re-executar Isolamento IA' : 'Isolar Peça com IA'}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
+            {/* STATUS E PREPARAÇÃO AUTOMÁTICA DA ROUPA */}
+            {catalogPhotoUrl.trim() ? (
+              <View style={styles.aiActionCard}>
+                <View style={styles.aiActionHeader}>
+                  <Sparkles size={16} color={colors.accentDark} />
+                  <Text style={styles.aiActionTitle}>Status para o Provador Virtual</Text>
+                </View>
 
-            {/* SIDE-BY-SIDE VISUAL COMPARISON */}
+                {/* Status Badge */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 6 }}>
+                  {referencePhotoUrl ? (
+                    <View style={styles.gateBadge}>
+                      <Check size={13} color="#15803D" />
+                      <Text style={styles.gateBadgeText}>PRONTA PARA PROVAR</Text>
+                    </View>
+                  ) : isPreparingGarment ? (
+                    <View style={[styles.gateBadge, { backgroundColor: '#FEF3C7' }]}>
+                      <Text style={[styles.gateBadgeText, { color: '#B45309' }]}>PREPARANDO PEÇA...</Text>
+                    </View>
+                  ) : (
+                    <View style={[styles.gateBadge, { backgroundColor: '#F3F4F6' }]}>
+                      <Text style={[styles.gateBadgeText, { color: '#4B5563' }]}>PREPARAÇÃO AUTOMÁTICA AO SALVAR</Text>
+                    </View>
+                  )}
+                </View>
+
+                <Text style={styles.aiActionDesc}>
+                  {referencePhotoUrl
+                    ? 'A peça foi isolada e validada pelo Quality Gate com modelo removido e fundo neutro.'
+                    : 'A roupa é tratada e isolada de forma 100% transparente pelo motor de IA.'}
+                </Text>
+
+                {product?.id && (
+                  <TouchableOpacity
+                    style={[styles.aiActionBtn, isPreparingGarment && styles.aiActionBtnDisabled]}
+                    onPress={handleTriggerAIGarmentPreparation}
+                    disabled={isPreparingGarment}
+                    activeOpacity={0.85}
+                  >
+                    {isPreparingGarment ? (
+                      <Text style={styles.aiActionBtnText}>Preparando Peça com IA...</Text>
+                    ) : (
+                      <>
+                        <Sparkles size={14} color={colors.textInverse} />
+                        <Text style={styles.aiActionBtnText}>
+                          {referencePhotoUrl ? 'Atualizar Preparação IA' : 'Preparar Peça com IA Agora'}
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+            ) : null}
+
+            {/* VISUAL PREVIEW */}
             {(catalogPhotoUrl || referencePhotoUrl) && (
               <View style={styles.comparisonCard}>
-                <Text style={styles.comparisonTitle}>Comparativo Visual: Original vs Preparada</Text>
+                <Text style={styles.comparisonTitle}>Prévia Visual</Text>
                 <View style={styles.comparisonGrid}>
-                  {/* Left: Original */}
+                  {/* Original Photo */}
                   <View style={styles.comparisonItem}>
-                    <Text style={styles.comparisonLabel}>Foto do Catálogo (Original)</Text>
+                    <Text style={styles.comparisonLabel}>Foto do Catálogo</Text>
                     {catalogPhotoUrl ? (
                       <View style={styles.imagePreviewWrapper}>
                         <Image source={{ uri: catalogPhotoUrl }} style={styles.imagePreview} resizeMode="cover" />
                       </View>
                     ) : (
                       <View style={styles.emptyPreviewBox}>
-                        <Text style={styles.emptyPreviewText}>Sem foto original</Text>
+                        <Text style={styles.emptyPreviewText}>Sem foto</Text>
                       </View>
                     )}
                   </View>
 
-                  {/* Right: Preparada */}
-                  <View style={styles.comparisonItem}>
-                    <Text style={[styles.comparisonLabel, { color: colors.accentDark, fontWeight: '700' }]}>
-                      Preparada para o Provador (IA)
-                    </Text>
-                    {referencePhotoUrl ? (
+                  {/* Prepared Reference */}
+                  {referencePhotoUrl && (
+                    <View style={styles.comparisonItem}>
+                      <Text style={[styles.comparisonLabel, { color: colors.accentDark, fontWeight: '700' }]}>
+                        Isolamento para o Provador
+                      </Text>
                       <View style={[styles.imagePreviewWrapper, { borderColor: colors.accentDark, borderWidth: 1.5 }]}>
                         <Image source={{ uri: referencePhotoUrl }} style={styles.imagePreview} resizeMode="cover" />
                       </View>
-                    ) : (
-                      <View style={styles.emptyPreviewBox}>
-                        <Text style={styles.emptyPreviewText}>Pendente de preparação</Text>
-                      </View>
-                    )}
-                  </View>
+                    </View>
+                  )}
                 </View>
-
-                {/* Badges */}
-                {referencePhotoUrl && (
-                  <View style={styles.qualityGateRow}>
-                    <View style={styles.gateBadge}>
-                      <Check size={12} color="#16a34a" />
-                      <Text style={styles.gateBadgeText}>Modelo Removido</Text>
-                    </View>
-                    <View style={styles.gateBadge}>
-                      <Check size={12} color="#16a34a" />
-                      <Text style={styles.gateBadgeText}>Fundo Tratado</Text>
-                    </View>
-                    <View style={styles.gateBadge}>
-                      <Check size={12} color="#16a34a" />
-                      <Text style={styles.gateBadgeText}>Quality Gate OK</Text>
-                    </View>
-                  </View>
-                )}
               </View>
             )}
-
-            {/* SEPARATED IMAGES: 2. FOTO PARA O PROVADOR (EDIT MANUAL) */}
-            <View style={[styles.photoSectionCard, { borderColor: colors.accentDark }]}>
-              <View style={styles.photoSectionHeader}>
-                <Sparkles size={15} color={colors.accent} />
-                <Text style={styles.photoSectionTitle}>{t('tryOnPhotoSectionTitle')}</Text>
-              </View>
-              <Text style={styles.photoSectionHelp}>{t('tryOnPhotoSectionDesc')}</Text>
-
-              <TextInput
-                style={[styles.input, { marginTop: spacing.sm }]}
-                value={referencePhotoUrl}
-                onChangeText={setReferencePhotoUrl}
-                placeholder={t('photoUrlPlaceholder')}
-                placeholderTextColor={colors.textTertiary}
-              />
-            </View>
 
             {/* Delete button (only when editing) */}
             {product?.id && onDelete && (

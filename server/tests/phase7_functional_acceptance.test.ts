@@ -93,6 +93,38 @@ async function runPhase7AcceptanceTests() {
   console.log(`✅ TEST 6 PASSED: Dedicated try_on_reference generated: ${prepResult.preparedImageUrl.substring(0, 50)}...`);
 
   // ----------------------------------------------------
+  // TEST 6.1 (FASE 7.2): Automatic On-Demand Preparation on Unprepared Product
+  // ----------------------------------------------------
+  console.log('\n[TEST 6.1 - FASE 7.2] Testing Automatic On-Demand Preparation when product has NO try_on_reference...');
+  const unPreparedProduct = await catalogService.createProduct({
+    storeId: testStoreId,
+    name: 'Blusa Linho Cru Automatica',
+    description: 'Blusa sem preparação prévia',
+    category: 'upper_body',
+    garmentType: 'top',
+    color: 'Cru',
+    price: 299.0,
+    photos: [
+      {
+        id: 'photo-cat-auto-' + Date.now(),
+        productId: '',
+        type: 'catalog',
+        storagePath: 'https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=600&q=80',
+        sortOrder: 0,
+      },
+    ],
+  });
+
+  // Verify that calling getGarmentReferenceForProduct on a product with NO try_on_reference automatically prepares it
+  const autoResolvedRef = await garmentPrepService.getGarmentReferenceForProduct(unPreparedProduct.id, testStoreId);
+  assert(autoResolvedRef.referenceUrl, 'Automatic on-demand preparation must generate and return referenceUrl');
+  assert.strictEqual(autoResolvedRef.product.id, unPreparedProduct.id);
+  console.log(`✅ TEST 6.1 (FASE 7.2) PASSED: getGarmentReferenceForProduct automatically prepared product '${unPreparedProduct.id}' on-demand without throwing error!`);
+
+  // Clean up auto test product
+  await catalogService.deleteProduct(unPreparedProduct.id);
+
+  // ----------------------------------------------------
   // TEST 7: Query Product by ID & Reference Resolution
   // ----------------------------------------------------
   console.log('\n[TEST 7] Testing getGarmentReferenceForProduct with Real DB ID...');

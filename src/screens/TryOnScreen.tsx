@@ -214,10 +214,9 @@ export function TryOnScreen({ route }: any) {
       return;
     }
 
-    const referencePhoto = currentProduct.photos?.find(p => p.type === 'try_on_reference')?.storagePath;
-
-    if (!referencePhoto) {
-      Alert.alert(t('tryOnErrorTitle'), t('garmentNotReadyMsg'));
+    const hasAnyPhoto = currentProduct.photos && currentProduct.photos.some(p => p.storagePath);
+    if (!hasAnyPhoto) {
+      Alert.alert(t('garmentMissingAlertTitle') || 'Foto da peça ausente', 'Esta peça ainda não possui foto cadastrada no catálogo.');
       return;
     }
 

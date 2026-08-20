@@ -55,10 +55,17 @@ const handleGenerateTryOn = async (req: AuthenticatedRequest, res: Response): Pr
         res.status(403).json({ error: 'STORE_MISMATCH', message: `Product '${productId}' does not belong to store '${storeId}'.` });
         return;
       }
-      if (errCode === 'PRODUCT_TRY_ON_REFERENCE_NOT_FOUND') {
+      if (errCode === 'CATALOG_PHOTO_MISSING') {
         res.status(400).json({
-          error: 'PRODUCT_TRY_ON_REFERENCE_NOT_FOUND',
-          message: `Product '${productId}' does not have a dedicated 'try_on_reference' photo configured in database.`,
+          error: 'CATALOG_PHOTO_MISSING',
+          message: lookupErr.message || 'Produto não possui foto de catálogo cadastrada.',
+        });
+        return;
+      }
+      if (errCode === 'GARMENT_PREPARATION_FAILED') {
+        res.status(422).json({
+          error: 'GARMENT_PREPARATION_FAILED',
+          message: lookupErr.message || 'Não conseguimos preparar esta peça. Tente usar outra foto com a roupa mais visível.',
         });
         return;
       }
