@@ -84,6 +84,8 @@ async function runPhase7_3AcceptanceTests() {
   console.log(`- Google API Key Present: ${Boolean(googleKey && googleKey.length > 10)}`);
   assert(pcKey.length > 10, 'Perfect Corp key must be configured in environment');
 
+  await credentialService.setCredential(testStoreId, 'perfectcorp', pcKey);
+
   // ----------------------------------------------------
   // TEST 4 & 5: TEST A/B WITH DEDICATED PRODUCTS & UNIQUE REFERENCES
   // ----------------------------------------------------

@@ -191,10 +191,10 @@ async function runTests() {
     const tinyPngBuffer = createValidPngBuffer(200, 200, 'T');
     globalThis.fetch = (async (url: string | URL | Request) => {
       const urlStr = url.toString();
-      if (urlStr.includes('person_subject.jpg')) {
+      if (urlStr.includes('garment_reference.jpg')) {
         return new Response(tinyPngBuffer, { status: 200 });
       }
-      return new Response(garmentPngBuffer, { status: 200 });
+      return new Response(personPngBuffer, { status: 200 });
     }) as typeof fetch;
 
     const resSmallImg = await providerSuccess.generateTryOn(validInput);

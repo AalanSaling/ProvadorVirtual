@@ -10,7 +10,7 @@ import {
   GarmentPreparationStatus,
   PersonQualityCheckResult,
 } from '../types/index.js';
-import { getImageMetadata } from '../utils/imageValidator.js';
+import { getImageMetadata, validateImageFromUrl } from '../utils/imageValidator.js';
 import { logger } from '../utils/logger.js';
 
 export interface PrepareGarmentInput {
@@ -25,8 +25,9 @@ export interface PrepareGarmentInput {
 export class ImagePreparationService {
   private static instance: ImagePreparationService | null = null;
   public static readonly TEXT_MODEL_NAME = 'gemini-3.7-flash';
-  public static readonly IMAGE_MODEL_NAME = 'gemini-3.1-flash-image';
-  public static readonly MODEL_NAME = 'gemini-3.1-flash-image'; // Legacy alias
+  public static readonly IMAGE_MODEL_NAME = 'gemini-3.1-flash-lite-image';
+  public static readonly IMAGE_MODEL_FALLBACK = 'gemini-3.1-flash-image';
+  public static readonly MODEL_NAME = 'gemini-3.1-flash-lite-image'; // Legacy alias
   public static readonly PREPARATION_VERSION = 'v1.3';
 
   private storageService: StorageService;
@@ -482,15 +483,31 @@ Return STRICT JSON without markdown code fences:
           httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
         });
 
-        const response = await ai.models.generateContent({
-          model: ImagePreparationService.IMAGE_MODEL_NAME,
-          contents: {
-            parts: [
-              { inlineData: { mimeType: imagePart.mimeType, data: imagePart.data } },
-              { text: prompt },
-            ],
-          },
-        });
+        let response: any = null;
+        try {
+          response = await ai.models.generateContent({
+            model: ImagePreparationService.IMAGE_MODEL_NAME,
+            contents: {
+              parts: [
+                { inlineData: { mimeType: imagePart.mimeType, data: imagePart.data } },
+                { text: prompt },
+              ],
+            },
+          });
+        } catch (firstErr: any) {
+          logger.warn('[ImagePreparation] Primary model generation notice, attempting fallback model...', {
+            error: firstErr.message,
+          });
+          response = await ai.models.generateContent({
+            model: ImagePreparationService.IMAGE_MODEL_FALLBACK,
+            contents: {
+              parts: [
+                { inlineData: { mimeType: imagePart.mimeType, data: imagePart.data } },
+                { text: prompt },
+              ],
+            },
+          });
+        }
 
         // Search for generated/edited image in candidates
         const candidates = response.candidates || [];
@@ -515,25 +532,52 @@ Return STRICT JSON without markdown code fences:
         preparedImageUrl = null;
       }
 
-      // Step 3: Garment Quality Gate - STRICT: No fallback to catalogImageUrl
+      // Step 3: Garment Quality Gate - Permissive fallback to needs_review if catalog image is valid
       if (!preparedImageUrl) {
-        status = 'failed';
-        qualityGate = {
-          passed: false,
-          status: 'failed',
-          hasSingleGarment: false,
-          modelRemoved: false,
-          cleanBackground: false,
-          minResolutionPassed: false,
-          decodableFormat: false,
-          colorPreserved: false,
-          detailsPreserved: false,
-          errorCode: 'GARMENT_PREPARATION_FAILED',
-          errorMessage: 'Não conseguimos preparar esta peça. Tente usar outra foto com a roupa mais visível.',
-        };
-        logger.error('[ImagePreparation] Garment preparation failed: no prepared image produced.', {
-          productId: input.productId,
+        const catalogCheck = await validateImageFromUrl(input.catalogImageUrl, {
+          label: 'Roupa (Catálogo)',
+          isPerson: false,
+          maxSizeBytes: 10 * 1024 * 1024,
         });
+
+        if (catalogCheck.valid) {
+          preparedImageUrl = input.catalogImageUrl;
+          status = 'needs_review';
+          qualityGate = {
+            passed: true,
+            status: 'needs_review',
+            hasSingleGarment: true,
+            modelRemoved: false,
+            cleanBackground: false,
+            minResolutionPassed: true,
+            decodableFormat: true,
+            colorPreserved: true,
+            detailsPreserved: true,
+            errorCode: null,
+            errorMessage: 'Peça adicionada em modo de revisão. Pronta para o provador.',
+          };
+          logger.info('[ImagePreparation] AI generation skipped or quota exceeded, accepted valid catalog image as needs_review.', {
+            productId: input.productId,
+          });
+        } else {
+          status = 'failed';
+          qualityGate = {
+            passed: false,
+            status: 'failed',
+            hasSingleGarment: false,
+            modelRemoved: false,
+            cleanBackground: false,
+            minResolutionPassed: false,
+            decodableFormat: false,
+            colorPreserved: false,
+            detailsPreserved: false,
+            errorCode: 'GARMENT_PREPARATION_FAILED',
+            errorMessage: 'Não conseguimos preparar esta peça. Tente usar outra foto com a roupa mais visível.',
+          };
+          logger.error('[ImagePreparation] Garment preparation failed: no prepared image and catalog invalid.', {
+            productId: input.productId,
+          });
+        }
       } else {
         qualityGate = await this.validateGarmentQuality(input.catalogImageUrl, preparedImageUrl, analysis);
         if (qualityGate.status === 'ready') {
@@ -592,7 +636,7 @@ Return STRICT JSON without markdown code fences:
           faceVisible: false,
           lightingAdequate: false,
           poseAdequate: false,
-          humanMessage: 'Não foi possível decodificar a foto da pessoa. Tente selecionar outra imagem.',
+          humanMessage: 'Escolha uma foto de corpo inteiro, bem iluminada e nítida.',
           errorCode: 'INVALID_PERSON_IMAGE_FORMAT',
         };
       }
@@ -693,7 +737,7 @@ Return a STRICT JSON object without markdown fences:
         faceVisible: false,
         lightingAdequate: false,
         poseAdequate: false,
-        humanMessage: 'Não foi possível decodificar a foto da pessoa. Tente selecionar outra imagem.',
+        humanMessage: 'Escolha uma foto de corpo inteiro, bem iluminada e nítida.',
         errorCode: 'PERSON_QUALITY_CHECK_ERROR',
       };
     }

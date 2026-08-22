@@ -369,7 +369,7 @@ export class PerfectCorpTryOnProvider implements ITryOnProvider {
       logger.error('[PerfectCorp] Exception during execution', { requestId, error: err.message });
       return {
         provider: this.id,
-        status: 'error',
+        status: 'failed',
         resultImage: null,
         providerTaskId: null,
         errorCode: 'PERFECTCORP_PROVIDER_ERROR',

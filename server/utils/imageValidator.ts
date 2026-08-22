@@ -173,7 +173,7 @@ export async function validateImageFromUrl(
   imageUrl: string,
   options: ImageValidationOptions
 ): Promise<ImageValidationResult> {
-  const maxSizeBytes = options.maxSizeBytes ?? (options.isPerson ? 15 * 1024 * 1024 : 10 * 1024 * 1024);
+  const maxSizeBytes = options.maxSizeBytes ?? 10 * 1024 * 1024;
   const maxLongSide = options.maxLongSide ?? 4096;
 
   try {

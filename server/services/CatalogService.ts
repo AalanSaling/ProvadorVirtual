@@ -384,12 +384,13 @@ export class CatalogService {
       p => p.storeId === storeId && p.active !== false
     );
 
-    // If store has 0 products or only has duplicates of the single old dress from earlier tests, seed initial diverse items
+    // If default demo store (store-atelier-01) has 0 products or only has duplicates of the single old dress, seed initial diverse items
+    const isDefaultDemoStore = storeId === 'store-atelier-01';
     const isSingleDuplicateOldDress =
       localStoreProducts.length > 0 &&
       localStoreProducts.every(p => p.name === 'Vestido Seda Champagne Real');
 
-    if (localStoreProducts.length === 0 || isSingleDuplicateOldDress) {
+    if (isDefaultDemoStore && (localStoreProducts.length === 0 || isSingleDuplicateOldDress)) {
       // Clean previous duplicates if any
       if (isSingleDuplicateOldDress) {
         localStoreProducts.forEach(p => this.inMemoryStore.delete(p.id));

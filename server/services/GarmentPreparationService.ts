@@ -91,8 +91,8 @@ export class GarmentPreparationService {
 
     if ((prepMeta.status !== 'ready' && prepMeta.status !== 'needs_review') || !prepMeta.preparedImageUrl) {
       const userMessage = 'Não conseguimos preparar esta peça. Tente usar outra foto com a roupa mais visível.';
-      const err = new Error(userMessage);
-      (err as unknown as Record<string, string>).code = 'GARMENT_PREPARATION_FAILED';
+      const err = new Error(`PRODUCT_TRY_ON_REFERENCE_NOT_FOUND: ${userMessage}`);
+      (err as unknown as Record<string, string>).code = 'PRODUCT_TRY_ON_REFERENCE_NOT_FOUND';
       (err as unknown as Record<string, string>).details = prepMeta.qualityGate?.errorMessage || userMessage;
       throw err;
     }
