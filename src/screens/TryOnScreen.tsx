@@ -229,6 +229,11 @@ export function TryOnScreen({ route }: any) {
       return;
     }
 
+    if (currentProduct.garmentPreparation?.status === 'needs_review') {
+      Alert.alert('Revisão necessária', 'Esta peça precisa ser revisada antes de ser usada no provador.');
+      return;
+    }
+
     const storeId = currentProduct.storeId;
     if (!storeId) {
       Alert.alert(t('error') || 'Erro', 'Não foi possível identificar a loja desta peça.');

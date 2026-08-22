@@ -27,6 +27,7 @@ export interface Product {
   stock: number;
   active?: boolean;
   photos?: ProductPhoto[];
+  garmentPreparation?: GarmentPreparationMetadata;
   createdAt?: string;
   updatedAt?: string;
 }

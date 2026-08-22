@@ -280,9 +280,9 @@ export class ImagePreparationService {
         return {
           passed: false,
           status: 'failed',
-          hasSingleGarment: analysis?.hasMultipleGarments ? false : true,
-          modelRemoved: analysis?.hasModelOrPerson ? false : true,
-          cleanBackground: analysis?.hasComplexBackground ? false : true,
+          hasSingleGarment: false,
+          modelRemoved: false,
+          cleanBackground: false,
           minResolutionPassed: true,
           decodableFormat: true,
           colorPreserved: true,
@@ -379,19 +379,20 @@ Return STRICT JSON without markdown code fences:
             };
           }
 
-          // If uncertain or minor warning, classify as NEEDS_REVIEW rather than FAILED
+          // If image was generated and model is removed/background is clean, but some minor details or colors need manual visual check -> NEEDS_REVIEW
+          // Note: NEEDS_REVIEW is NOT passed (cannot be used directly in VTON without review)
           return {
-            passed: true,
+            passed: false,
             status: 'needs_review',
             hasSingleGarment: hasSingleGarment ? true : 'unknown',
-            modelRemoved: modelRemoved ? true : 'unknown',
-            cleanBackground: cleanBackground ? true : 'unknown',
+            modelRemoved: modelRemoved ? true : false,
+            cleanBackground: cleanBackground ? true : false,
             minResolutionPassed: true,
             decodableFormat: true,
             colorPreserved: colorPreserved ? true : 'unknown',
             detailsPreserved: detailsPreserved ? true : 'unknown',
             errorCode: null,
-            errorMessage: parsed.reason || 'Revisão recomendada: a peça foi isolada mas alguns detalhes merecem verificação visual.',
+            errorMessage: parsed.reason || 'Esta peça precisa ser revisada antes de ser usada no provador.',
           };
         } catch (aiVerifyErr: any) {
           logger.warn('[ImagePreparation] AI Quality Gate verification check encountered issue, evaluating metadata', {
@@ -401,18 +402,18 @@ Return STRICT JSON without markdown code fences:
       }
 
       // Rule-based evaluation when AI check is skipped/unavailable
-      const isPreparedDistinct = preparedUrl !== originalUrl && (preparedUrl.includes('prep_') || preparedUrl.includes('try_on') || preparedUrl.includes('segmented') || preparedUrl.includes('upload'));
+      const isPreparedDistinct = preparedUrl !== originalUrl;
 
       return {
         passed: isPreparedDistinct,
         status: isPreparedDistinct ? 'ready' : 'failed',
-        hasSingleGarment: isPreparedDistinct ? true : 'unknown',
-        modelRemoved: isPreparedDistinct ? true : 'unknown',
-        cleanBackground: isPreparedDistinct ? true : 'unknown',
+        hasSingleGarment: isPreparedDistinct ? true : false,
+        modelRemoved: isPreparedDistinct ? true : false,
+        cleanBackground: isPreparedDistinct ? true : false,
         minResolutionPassed: true,
         decodableFormat: true,
-        colorPreserved: true,
-        detailsPreserved: true,
+        colorPreserved: isPreparedDistinct ? true : false,
+        detailsPreserved: isPreparedDistinct ? true : false,
         errorCode: isPreparedDistinct ? null : 'GARMENT_PREPARATION_FAILED',
         errorMessage: isPreparedDistinct ? null : 'A preparação não produziu uma imagem tratada e isolada.',
       };
@@ -464,13 +465,13 @@ Return STRICT JSON without markdown code fences:
       qualityGate = {
         passed: false,
         status: 'not_configured',
-        hasSingleGarment: 'unknown',
-        modelRemoved: 'unknown',
-        cleanBackground: 'unknown',
+        hasSingleGarment: false,
+        modelRemoved: false,
+        cleanBackground: false,
         minResolutionPassed: false,
         decodableFormat: false,
-        colorPreserved: 'unknown',
-        detailsPreserved: 'unknown',
+        colorPreserved: false,
+        detailsPreserved: false,
         errorCode: 'GARMENT_PREPARATION_NOT_CONFIGURED',
         errorMessage: 'A preparação automática da peça ainda não está configurada.',
       };
@@ -532,52 +533,25 @@ Return STRICT JSON without markdown code fences:
         preparedImageUrl = null;
       }
 
-      // Step 3: Garment Quality Gate - Permissive fallback to needs_review if catalog image is valid
+      // Step 3: Garment Quality Gate - STRICT: NEVER copy catalog image as fallback!
       if (!preparedImageUrl) {
-        const catalogCheck = await validateImageFromUrl(input.catalogImageUrl, {
-          label: 'Roupa (Catálogo)',
-          isPerson: false,
-          maxSizeBytes: 10 * 1024 * 1024,
+        status = 'failed';
+        qualityGate = {
+          passed: false,
+          status: 'failed',
+          hasSingleGarment: false,
+          modelRemoved: false,
+          cleanBackground: false,
+          minResolutionPassed: false,
+          decodableFormat: false,
+          colorPreserved: false,
+          detailsPreserved: false,
+          errorCode: 'GARMENT_PREPARATION_FAILED',
+          errorMessage: 'Não conseguimos preparar esta peça automaticamente. Tente usar outra foto com a roupa mais visível.',
+        };
+        logger.warn('[ImagePreparation] AI preparation did not generate a prepared reference image. Marked as failed with NO catalog fallback.', {
+          productId: input.productId,
         });
-
-        if (catalogCheck.valid) {
-          preparedImageUrl = input.catalogImageUrl;
-          status = 'needs_review';
-          qualityGate = {
-            passed: true,
-            status: 'needs_review',
-            hasSingleGarment: true,
-            modelRemoved: false,
-            cleanBackground: false,
-            minResolutionPassed: true,
-            decodableFormat: true,
-            colorPreserved: true,
-            detailsPreserved: true,
-            errorCode: null,
-            errorMessage: 'Peça adicionada em modo de revisão. Pronta para o provador.',
-          };
-          logger.info('[ImagePreparation] AI generation skipped or quota exceeded, accepted valid catalog image as needs_review.', {
-            productId: input.productId,
-          });
-        } else {
-          status = 'failed';
-          qualityGate = {
-            passed: false,
-            status: 'failed',
-            hasSingleGarment: false,
-            modelRemoved: false,
-            cleanBackground: false,
-            minResolutionPassed: false,
-            decodableFormat: false,
-            colorPreserved: false,
-            detailsPreserved: false,
-            errorCode: 'GARMENT_PREPARATION_FAILED',
-            errorMessage: 'Não conseguimos preparar esta peça. Tente usar outra foto com a roupa mais visível.',
-          };
-          logger.error('[ImagePreparation] Garment preparation failed: no prepared image and catalog invalid.', {
-            productId: input.productId,
-          });
-        }
       } else {
         qualityGate = await this.validateGarmentQuality(input.catalogImageUrl, preparedImageUrl, analysis);
         if (qualityGate.status === 'ready') {

@@ -223,17 +223,26 @@ export function ProductDetailModal({
 
           {/* Footer CTA */}
           <View style={styles.footer}>
-            <TouchableOpacity
-              style={styles.ctaButton}
-              onPress={() => {
-                onSelectForTryOn(product);
-                onClose();
-              }}
-              activeOpacity={0.85}
-            >
-              <Sparkles size={16} color={colors.textInverse} />
-              <Text style={styles.ctaButtonText}>{t('tryThisGarmentBtn')}</Text>
-            </TouchableOpacity>
+            {product.garmentPreparation?.status === 'needs_review' ? (
+              <View style={styles.reviewWarningBox}>
+                <Info size={14} color={colors.warning} />
+                <Text style={styles.reviewWarningText}>
+                  Esta peça precisa ser revisada antes de ser usada no provador.
+                </Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.ctaButton}
+                onPress={() => {
+                  onSelectForTryOn(product);
+                  onClose();
+                }}
+                activeOpacity={0.85}
+              >
+                <Sparkles size={16} color={colors.textInverse} />
+                <Text style={styles.ctaButtonText}>{t('tryThisGarmentBtn')}</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </SafeAreaView>
@@ -484,5 +493,23 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.textInverse,
     letterSpacing: 0.8,
+  },
+  reviewWarningBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fef3c7',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: borderRadius.md,
+  },
+  reviewWarningText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#92400e',
+    textAlign: 'center',
   },
 });

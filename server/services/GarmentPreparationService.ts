@@ -82,17 +82,26 @@ export class GarmentPreparationService {
     logger.info(`[GarmentPreparation] No try_on_reference found for product '${productId}'. Triggering automatic on-demand garment preparation pipeline.`);
     const prepMeta = await this.processProductGarmentPreparation(productId, storeId);
 
+    if (prepMeta.status === 'needs_review') {
+      const userMessage = 'Esta peça precisa ser revisada antes de ser usada no provador.';
+      const err = new Error(userMessage);
+      (err as unknown as Record<string, string>).code = 'GARMENT_NEEDS_REVIEW';
+      (err as unknown as Record<string, string>).details = userMessage;
+      throw err;
+    }
+
     if (prepMeta.status === 'not_configured') {
       const userMessage = 'A preparação automática da peça ainda não está configurada.';
       const err = new Error(userMessage);
       (err as unknown as Record<string, string>).code = 'GARMENT_PREPARATION_NOT_CONFIGURED';
+      (err as unknown as Record<string, string>).details = userMessage;
       throw err;
     }
 
-    if ((prepMeta.status !== 'ready' && prepMeta.status !== 'needs_review') || !prepMeta.preparedImageUrl) {
-      const userMessage = 'Não conseguimos preparar esta peça. Tente usar outra foto com a roupa mais visível.';
-      const err = new Error(`PRODUCT_TRY_ON_REFERENCE_NOT_FOUND: ${userMessage}`);
-      (err as unknown as Record<string, string>).code = 'PRODUCT_TRY_ON_REFERENCE_NOT_FOUND';
+    if (prepMeta.status !== 'ready' || !prepMeta.preparedImageUrl) {
+      const userMessage = 'Não conseguimos preparar esta peça automaticamente. Tente usar outra foto com a roupa mais visível.';
+      const err = new Error(`GARMENT_PREPARATION_FAILED: ${userMessage}`);
+      (err as unknown as Record<string, string>).code = 'GARMENT_PREPARATION_FAILED';
       (err as unknown as Record<string, string>).details = prepMeta.qualityGate?.errorMessage || userMessage;
       throw err;
     }
@@ -152,8 +161,8 @@ export class GarmentPreparationService {
       apiKey: apiKeyOverride,
     });
 
-    if ((prepMeta.status === 'ready' || prepMeta.status === 'needs_review') && prepMeta.preparedImageUrl) {
-      // Upsert prepared image as try_on_reference in database and durable storage
+    if (prepMeta.status === 'ready' && prepMeta.preparedImageUrl) {
+      // Upsert prepared image as try_on_reference in database and durable storage only when READY
       try {
         await this.catalogService.updateTryOnReference(product.id, prepMeta.preparedImageUrl);
       } catch (dbErr: any) {

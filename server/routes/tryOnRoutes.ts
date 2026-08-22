@@ -62,6 +62,13 @@ const handleGenerateTryOn = async (req: AuthenticatedRequest, res: Response): Pr
         });
         return;
       }
+      if (errCode === 'GARMENT_NEEDS_REVIEW') {
+        res.status(422).json({
+          error: 'GARMENT_NEEDS_REVIEW',
+          message: lookupErr.message || 'Esta peça precisa ser revisada antes de ser usada no provador.',
+        });
+        return;
+      }
       if (errCode === 'GARMENT_PREPARATION_NOT_CONFIGURED') {
         res.status(400).json({
           error: 'GARMENT_PREPARATION_NOT_CONFIGURED',
@@ -69,10 +76,10 @@ const handleGenerateTryOn = async (req: AuthenticatedRequest, res: Response): Pr
         });
         return;
       }
-      if (errCode === 'GARMENT_PREPARATION_FAILED') {
+      if (errCode === 'GARMENT_PREPARATION_FAILED' || errCode === 'PRODUCT_TRY_ON_REFERENCE_NOT_FOUND') {
         res.status(422).json({
           error: 'GARMENT_PREPARATION_FAILED',
-          message: lookupErr.message || 'Não conseguimos preparar esta peça. Tente usar outra foto com a roupa mais visível.',
+          message: lookupErr.message || 'Não conseguimos preparar esta peça automaticamente. Tente usar outra foto com a roupa mais visível.',
         });
         return;
       }
