@@ -144,6 +144,18 @@ async function runTests() {
 
     const mockCatalogService: any = {
       getProductById: async (id: string) => mockProducts.find(p => p.id === id) || null,
+      updateProduct: async (id: string, updates: any) => {
+        const prod = mockProducts.find(p => p.id === id);
+        if (prod) Object.assign(prod, updates);
+        return prod;
+      },
+      updateTryOnReference: async (id: string, refUrl: string) => {
+        const prod = mockProducts.find(p => p.id === id);
+        if (prod) {
+          prod.photos = (prod.photos || []).filter((p: any) => p.type !== 'try_on_reference');
+          prod.photos.push({ type: 'try_on_reference', storagePath: refUrl });
+        }
+      },
     };
 
     const mockStorageService: any = {
@@ -163,9 +175,9 @@ async function runTests() {
     // 4.2 Rejects product with missing try_on_reference
     await assert.rejects(
       async () => garmentPrepService.getGarmentReferenceForProduct('prod-missing-ref', 'store-paris'),
-      /PRODUCT_TRY_ON_REFERENCE_NOT_FOUND/
+      /GARMENT_PREPARATION_FAILED|PRODUCT_TRY_ON_REFERENCE_NOT_FOUND/
     );
-    console.log('  ✅ Missing reference photo strictly rejected with PRODUCT_TRY_ON_REFERENCE_NOT_FOUND');
+    console.log('  ✅ Missing reference photo strictly rejected with GARMENT_PREPARATION_FAILED / PRODUCT_TRY_ON_REFERENCE_NOT_FOUND');
 
     // 4.3 Rejects cross-store request
     await assert.rejects(

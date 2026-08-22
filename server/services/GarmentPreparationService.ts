@@ -50,8 +50,33 @@ export class GarmentPreparationService {
     const tryOnRefPhoto = product.photos?.find(p => p.type === 'try_on_reference');
     const catalogPhoto = product.photos?.find(p => p.type === 'catalog') || product.photos?.[0];
 
-    // If try_on_reference already exists, resolve and return it
-    if (tryOnRefPhoto && tryOnRefPhoto.storagePath) {
+    // If product was already prepared and marked with non-ready status -> strictly block
+    if (product.garmentPreparation?.status === 'needs_review') {
+      const userMessage = 'Esta peça precisa ser revisada antes de ser usada no provador.';
+      const err = new Error(userMessage);
+      (err as unknown as Record<string, string>).code = 'GARMENT_NEEDS_REVIEW';
+      (err as unknown as Record<string, string>).details = userMessage;
+      throw err;
+    }
+
+    if (product.garmentPreparation?.status === 'failed') {
+      const userMessage = 'Não conseguimos preparar esta peça automaticamente. Tente usar outra foto com a roupa mais visível.';
+      const err = new Error(`GARMENT_PREPARATION_FAILED: ${userMessage}`);
+      (err as unknown as Record<string, string>).code = 'GARMENT_PREPARATION_FAILED';
+      (err as unknown as Record<string, string>).details = userMessage;
+      throw err;
+    }
+
+    if (product.garmentPreparation?.status === 'not_configured') {
+      const userMessage = 'A preparação automática da peça ainda não está configurada.';
+      const err = new Error(userMessage);
+      (err as unknown as Record<string, string>).code = 'GARMENT_PREPARATION_NOT_CONFIGURED';
+      (err as unknown as Record<string, string>).details = userMessage;
+      throw err;
+    }
+
+    // If try_on_reference already exists (and is distinct from catalog image) and status is READY -> resolve and return it
+    if (tryOnRefPhoto && tryOnRefPhoto.storagePath && tryOnRefPhoto.storagePath !== catalogPhoto?.storagePath) {
       let referenceUrl = tryOnRefPhoto.storagePath;
       if (!referenceUrl.startsWith('http://') && !referenceUrl.startsWith('https://')) {
         referenceUrl = this.storageService.getPublicUrl(StorageService.BUCKET_PRODUCT_IMAGES, referenceUrl);
@@ -79,7 +104,7 @@ export class GarmentPreparationService {
       throw err;
     }
 
-    logger.info(`[GarmentPreparation] No try_on_reference found for product '${productId}'. Triggering automatic on-demand garment preparation pipeline.`);
+    logger.info(`[GarmentPreparation] No valid try_on_reference found for product '${productId}'. Triggering automatic on-demand garment preparation pipeline.`);
     const prepMeta = await this.processProductGarmentPreparation(productId, storeId);
 
     if (prepMeta.status === 'needs_review') {
@@ -161,12 +186,28 @@ export class GarmentPreparationService {
       apiKey: apiKeyOverride,
     });
 
+    // Update product garmentPreparation metadata and try_on_reference strictly when READY
     if (prepMeta.status === 'ready' && prepMeta.preparedImageUrl) {
-      // Upsert prepared image as try_on_reference in database and durable storage only when READY
       try {
+        await this.catalogService.updateProduct(product.id, {
+          garmentPreparation: prepMeta,
+        });
         await this.catalogService.updateTryOnReference(product.id, prepMeta.preparedImageUrl);
       } catch (dbErr: any) {
         logger.warn('[GarmentPreparation] Could not update try_on_reference:', {
+          error: dbErr.message,
+        });
+      }
+    } else {
+      // If status is NOT ready (needs_review, failed, not_configured): NEVER save as try_on_reference
+      try {
+        const cleanedPhotos = (product.photos || []).filter(p => p.type !== 'try_on_reference');
+        await this.catalogService.updateProduct(product.id, {
+          photos: cleanedPhotos,
+          garmentPreparation: prepMeta,
+        });
+      } catch (dbErr: any) {
+        logger.warn('[GarmentPreparation] Could not update product status:', {
           error: dbErr.message,
         });
       }

@@ -1,6 +1,6 @@
 # Provador Virtual IA — Virtual Try-On Platform
 
-Plataforma completa de Provador Virtual (Virtual Try-On — VTON) com Inteligência Artificial para moda, ateliês e e-commerce, com suporte para Web e Mobile (React Native / Expo).
+Plataforma completa de Provador Virtual (Virtual Try-On — VTON) com Inteligência Artificial para moda, ateliês e e-commerce, desenvolvida com React Native e Expo.
 
 ---
 
@@ -10,8 +10,11 @@ O sistema foi concebido sob uma arquitetura **B2B Multi-tenant** de alta escalab
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                 FRONTEND (Web & Mobile)                     │
-│  React Native / React (Vite) + Lucide Icons + Multi-idioma   │
+│                 FRONTEND (Mobile & Web)                     │
+│  React Native / Expo + Lucide Icons + Multi-idioma          │
+│  - Expo + React Native para plataforma unificada            │
+│  - Expo Web somente para preview no AI Studio               │
+│  - Android / iOS via Expo / EAS Build                       │
 │  - Provador Virtual Interativo                              │
 │  - Catálogo de Produtos & Detalhes                          │
 │  - Painel de Gestão & Vault de Credenciais de IA            │
@@ -45,14 +48,18 @@ O sistema foi concebido sob uma arquitetura **B2B Multi-tenant** de alta escalab
 
 ---
 
-## 2. Stack Técnica
+## 2. Stack Técnica e Plataformas
 
+- **Frontend Mobile & Web:**
+  - **Framework:** React Native + Expo (SDK 52+)
+  - **Expo Web:** Utilizado exclusivamente para live preview no ambiente AI Studio
+  - **Mobile Nativo:** Suporte total para Android (.apk/.aab) e iOS (.ipa) via Expo / EAS Build
+  - **Estilização e Componentes:** Tailwind CSS, Lucide Icons, React Native Animated
 - **Backend:** Node.js (v20+), TypeScript, Express 4.x
-- **Frontend:** React 19, React Native for Web, Expo Web, Tailwind CSS, Lucide Icons
 - **Inteligência Artificial (Garment Preparation & VTON):**
-  - Google Gemini Image Models (`gemini-3.1-flash-image`, `gemini-3.1-flash-lite-image`) via `@google/genai`
+  - Google Gemini Image Models (`gemini-3.1-flash-image`, `gemini-3.1-flash-lite-image`, `gemini-3.7-flash`) via `@google/genai`
   - Perfect Corp AI Fashion API (VTON Enterprise)
-- **Armazenamento de Mídia:** Storage Service com suporte a Supabase Storage S3-compatible e Local Disk Fallback
+- **Armazenamento de Mídia:** Storage Service com suporte a Supabase Storage (S3-compatible) e Local Disk Fallback
 - **Criptografia & Segurança:** AES-256-GCM para chaves de API por loja, validação criptográfica SHA-256 para integridade de imagens
 
 ---
@@ -75,6 +82,7 @@ O `GarmentPreparationService` executa as seguintes etapas:
 2. **Isolamento e Limpeza (Gemini Flash Image):** Gera uma nova imagem contendo **apenas** a peça de vestuário isolada, em fundo neutro e plano.
 3. **Quality Gate Estrito:** Valida conformidade das dimensões, preservação de textura/cores e ausência total de partes humanas.
 4. **Persistência Imutável:** Salva o resultado como entidade separada (`type: 'try_on_reference'`) sem alterar a foto original do catálogo.
+5. **Zero Fallback:** Se a IA não conseguir isolar a peça, o sistema **NUNCA** copia a foto do catálogo como referência. O status torna-se `failed` ou `not_configured`, bloqueando o provador de forma segura.
 
 ---
 
@@ -124,17 +132,25 @@ Crie um arquivo `.env` baseado no `.env.example`:
 # Servidor
 PORT=3000
 NODE_ENV=development
-JWT_SECRET=super_secret_jwt_key_provador_virtual_2026
+JWT_SECRET=<your-secret-here>
 
 # Google Gemini AI (Garment Preparation & VTON)
-GEMINI_API_KEY=sua_chave_gemini_aqui
+# O backend aceita GOOGLE_API_KEY ou GEMINI_API_KEY
+GOOGLE_API_KEY=<your-google-api-key>
+# GEMINI_API_KEY=<your-gemini-api-key>
 
 # Perfect Corp AI Fashion API (Opcional por Loja)
-PERFECTCORP_API_KEY=sua_chave_perfectcorp_aqui
+PERFECTCORP_API_KEY=<your-perfectcorp-api-key>
+PERFECTCORP_API_HOST=https://yce-api-01.makeupar.com
 
 # Supabase Storage (Opcional - fallback automático para disco local)
-SUPABASE_URL=https://seu-projeto.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=sua_service_role_key
+SUPABASE_URL=https://<your-project>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
+SUPABASE_ANON_KEY=<your-anon-key>
+
+# Mobile App Public Configuration (Expo / Client)
+EXPO_PUBLIC_SUPABASE_URL=https://<your-project>.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=<your-anon-key>
 ```
 
 ---
@@ -151,14 +167,11 @@ npm run dev
 # Checar tipagem TypeScript sem emitir arquivos
 npx tsc --noEmit
 
-# Executar suite de aceitação da referência e Quality Gate (Fase 7.6)
-npx tsx server/tests/phase7_6_acceptance.test.ts
+# Executar suite completa de testes
+npm test
 
-# Executar suite de integração do pipeline real e diagnóstico A/B (Fase 7.3)
-npx tsx server/tests/phase7_3_real_pipeline.test.ts
-
-# Executar suite funcional completa (Fase 7.0 - 7.2)
-npx tsx server/tests/phase7_functional_acceptance.test.ts
+# Executar suite de aceitação da referência e Quality Gate (Fase 7.7)
+npx tsx server/tests/phase7_7_acceptance.test.ts
 
 # Build de produção
 npm run build
